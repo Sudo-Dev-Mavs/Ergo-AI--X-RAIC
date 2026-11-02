@@ -36,6 +36,18 @@ TABLA_C = (
     (11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12),
     (12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12),
 )
+# Medidas que consume `calcular_reba`; las de lado se leen como `<medida>_L` y `<medida>_R`.
+MEDIDAS_REBA_UNICAS = (
+    "tronco_flexion", "cuello_flexion", "tronco_torsion", "tronco_inclinacion_lateral",
+    "cuello_inclinacion_rotacion", "apoyo_piernas_unilateral",
+)
+MEDIDAS_REBA_POR_LADO = ("rodilla_flexion", "brazo_flexion", "codo_flexion", "muneca_flexion_extension", "brazo_abduccion")
+
+
+def clave_reba(medida: str, lado: str | None) -> str:
+    """Clave de `calcular_reba` para una medición; `cuello_flexion` trae lado pero es única."""
+
+    return f"{medida}_{lado}" if lado and medida in MEDIDAS_REBA_POR_LADO else medida
 
 
 @dataclass(frozen=True)

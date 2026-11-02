@@ -3,7 +3,7 @@ import pytest
 from ergoai.eaws import calcular_eaws
 from ergoai.muneca import medir_muneca_con_mano
 from ergoai.nom036 import empuje_arrastre, levantamiento_distancia, torsion_lateral
-from ergoai.rula import banda_antebrazo, banda_brazo, banda_muneca, calcular_rula, puntaje_actividad, puntaje_carga, puntaje_tabla_a, puntaje_tabla_b
+from ergoai.rula import banda_antebrazo, banda_brazo, banda_cuello, banda_muneca, calcular_rula, puntaje_actividad, puntaje_carga, puntaje_tabla_a, puntaje_tabla_b
 
 
 def test_rula_tablas_bandas_y_resultado(configuracion) -> None:
@@ -39,3 +39,10 @@ def test_muneca_con_hand_landmarks() -> None:
     assert resultado.valor_deg == pytest.approx(0)
     assert resultado.confianza == 0.9
     assert medir_muneca_con_mano((0.0, 1.0), []).valor_deg is None
+
+
+def test_rula_banda_cuello(configuracion) -> None:
+    config = configuracion.rula
+    assert banda_cuello(-10, False, False, config) == 4
+    assert banda_cuello(5, False, False, config) == 1
+    assert banda_cuello(25, True, True, config) == 5

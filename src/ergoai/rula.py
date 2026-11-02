@@ -86,14 +86,14 @@ def banda_muneca(valor: float, desviada: bool, config: RulaConfig) -> int:
 def banda_cuello(valor: float, rotado: bool, inclinado: bool, config: RulaConfig) -> int:
     """Puntúa cuello RULA."""
 
-    if 0 <= valor <= config.cuello.neutro:
+    if valor < 0:
+        puntuacion = 4
+    elif valor <= config.cuello.neutro:
         puntuacion = 1
     elif valor <= config.cuello.medio:
         puntuacion = 2
-    elif valor > config.cuello.medio:
-        puntuacion = 3
     else:
-        puntuacion = 4
+        puntuacion = 3
     return min(6, puntuacion + int(rotado) + int(inclinado))
 
 

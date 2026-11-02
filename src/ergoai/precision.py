@@ -10,7 +10,7 @@ from typing import Any
 from .angulos import medir_vista
 from .config import Configuracion
 from .modelos import Landmark, VistaPose, WorldLandmark
-from .reba import calcular_reba
+from .reba import calcular_reba, clave_reba
 
 
 @dataclass(frozen=True)
@@ -39,9 +39,7 @@ def angulos_desde_landmarks_referencia(referencia: dict[str, Any], contexto: dic
             angulos.append(dato)
     mediciones_reba: dict[str, float | None] = {}
     for angulo in angulos:
-        medida, lado = angulo["medida"], angulo.get("lado")
-        clave = f"{medida}_{lado}" if lado and medida != "cuello_flexion" else medida
-        mediciones_reba[clave] = angulo["valor_deg"]
+        mediciones_reba[clave_reba(angulo["medida"], angulo.get("lado"))] = angulo["valor_deg"]
     reba = calcular_reba(mediciones_reba, contexto, configuracion.reba)
     for angulo in angulos:
         lado = angulo.get("lado")

@@ -1,6 +1,7 @@
 import pytest
 
 from ergoai.reba import (
+    MEDIDAS_REBA_POR_LADO, MEDIDAS_REBA_UNICAS,
     banda_antebrazo, banda_brazo, banda_muneca, banda_tronco, calcular_reba,
     nivel_riesgo, puntaje_tabla_a, puntaje_tabla_b, puntaje_tabla_c,
 )
@@ -61,3 +62,10 @@ def test_reba_incompleto_no_inventa_valores(configuracion) -> None:
     resultado = calcular_reba({}, {}, configuracion.reba)
     assert resultado.final["reportado"] is None
     assert resultado.pendientes_manuales
+
+
+def test_medidas_reba_declaradas_cubren_calcular_reba(configuracion) -> None:
+    mediciones = {medida: 0.0 for medida in MEDIDAS_REBA_UNICAS}
+    mediciones.update({f"{medida}_{lado}": 0.0 for medida in MEDIDAS_REBA_POR_LADO for lado in ("L", "R")})
+    resultado = calcular_reba(mediciones, {}, configuracion.reba)
+    assert [p for p in resultado.pendientes_manuales if p["motivo"] == "medición ausente o no utilizable"] == []
