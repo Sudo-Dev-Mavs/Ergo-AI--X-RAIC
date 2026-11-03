@@ -33,10 +33,11 @@ uv run python scripts/descargar_modelo.py
 uv run ergoai-gui
 ```
 
-1. Elige las fotos disponibles de frente, costado y/o aérea.
-2. Indica caso, postura, carga, agarre y actividad.
-3. Pulsa **Analizar ergonomía**.
-4. Consulta el REBA, nivel de riesgo, pendientes e imagen anotada. Los artefactos se guardan en `out/<caso_id>/`.
+1. Arrastra las fotos de frente, costado y/o aérea a cada tarjeta (también puedes usar **Elegir foto**). Si falta una vista, la interfaz lo avisa y no inventa esa pose.
+2. Completa el caso, la carga, la postura y lo que se ve en la estación.
+3. Pulsa **Analizar postura**. El cálculo es local.
+4. Revisa el REBA, el residual recalculado, las recomendaciones NOM-036 y aprueba/rechaza cada una (queda en bitácora). El resultado es una propuesta: el especialista decide.
+5. Abre el informe en `out/<caso_id>/informe.md` (también `resultado.json` y `bitacora.jsonl`).
 
 ### Línea de comandos
 
@@ -49,9 +50,11 @@ uv run python -m ergoai.cli pose data/casos/caso01
 # Vectores, ángulos e imágenes anotadas
 uv run python -m ergoai.cli angulos data/casos/caso01
 
-# Resultado REBA completo
+# Resultado REBA + recomendaciones + residual + informe
 uv run python -m ergoai.cli evaluar data/casos/caso01
 ```
+
+Tras `evaluar`, en `out/<caso_id>/` quedan `resultado.json`, `informe.md` y `bitacora.jsonl`.
 
 La anotación manual y la evaluación de precisión se ejecutan localmente:
 
@@ -78,7 +81,8 @@ La suite contiene pruebas de geometría, signos, relación de aspecto, selecció
 | Fase 3 — REBA | Implementada | Bandas, tablas A/B/C, ambos lados, contexto, overrides y `resultado.json`. |
 | Fase 4 — Precisión | Parcial | Anotación manual, comparación y CSV disponibles. Falta correr la validación completa con las fotografías/referencias reales y demostrar la meta ≥90 %. |
 | Fase 5 — Complementos | Parcial | Módulos base de RULA, EAWS, NOM-036 y muñeca; no alteran REBA. Falta integrar los complementos a la interfaz y validar HandLandmarker con referencias reales. |
-| Interfaz beta | Implementada | Aplicación de escritorio local. Falta empaquetarla como ejecutable para distribución sin Python. |
+| Interfaz beta | Implementada | Flujo de fotos, REBA, residual, recomendaciones con validación y apertura de informe. Falta empaquetar ejecutable. |
+| Informe / R3 / R6 / R7 | Implementado (beta) | Informe Markdown, reglas NOM-036 con ingeniería primero, bitácora append-only y residual con el mismo motor REBA. Falta calibrar con los 6 casos de Jabil y doc de 10 cuartillas. |
 
 ## Alcance y limitaciones de la beta
 

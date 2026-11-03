@@ -24,7 +24,13 @@ class MediaPipeBackend:
         self.configuracion = configuracion
         self.ruta_modelo = Path(raiz_proyecto) / configuracion.modelo
 
-    def detect(self, image: np.ndarray) -> list[PoseResult]:
+    def detect(
+        self,
+        image: np.ndarray,
+        *,
+        min_pose_detection_confidence: float | None = None,
+        min_pose_presence_confidence: float | None = None,
+    ) -> list[PoseResult]:
         """Detecta poses, conservando coordenadas 2D en píxeles y mundo 3D."""
 
         if not self.ruta_modelo.is_file():
@@ -43,8 +49,16 @@ class MediaPipeBackend:
             base_options=mp_python.BaseOptions(model_asset_path=str(self.ruta_modelo)),
             running_mode=vision.RunningMode.IMAGE,
             num_poses=self.configuracion.num_poses,
-            min_pose_detection_confidence=self.configuracion.min_pose_detection_confidence,
-            min_pose_presence_confidence=self.configuracion.min_pose_presence_confidence,
+            min_pose_detection_confidence=(
+                self.configuracion.min_pose_detection_confidence
+                if min_pose_detection_confidence is None
+                else min_pose_detection_confidence
+            ),
+            min_pose_presence_confidence=(
+                self.configuracion.min_pose_presence_confidence
+                if min_pose_presence_confidence is None
+                else min_pose_presence_confidence
+            ),
             output_segmentation_masks=False,
         )
         alto, ancho = image.shape[:2]

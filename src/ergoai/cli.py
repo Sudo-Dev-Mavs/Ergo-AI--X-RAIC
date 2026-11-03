@@ -5,13 +5,19 @@ import json
 from pathlib import Path
 from typing import Any
 
+import time
+
 from .angulos import MedicionAngulo, medir_vista
 from .anotacion import guardar_angulos, guardar_esqueleto
+from .bitacora import registrar
 from .config import Configuracion, cargar_configuracion
+from .informe import guardar_informe
 from .io_imagenes import ImagenRGB, cargar_imagen
 from .modelos import Landmark, PoseResult, VistaPose, WorldLandmark
 from .pose import MediaPipeBackend, PoseBackend
 from .reba import calcular_reba
+from .recomendaciones import generar_recomendaciones, hay_ingenieria_en_riesgo_alto
+from .residual import recalcular_residual
 
 VISTAS = ("frente", "costado", "aerea")
 EXTENSIONES_IMAGEN = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
@@ -41,6 +47,25 @@ def elegir_persona(personas: list[PoseResult], vis_min: float, persona_indice: i
     return indice, personas[indice]
 
 
+def _mejorar_para_aerea(pixeles):
+    """Contraste local y escala mínima para ayudar a MediaPipe en top-down."""
+
+    import cv2
+    import numpy as np
+
+    rgb = np.asarray(pixeles)
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    l_canal, a_canal, b_canal = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+    l_canal = clahe.apply(l_canal)
+    mejorada = cv2.cvtColor(cv2.merge((l_canal, a_canal, b_canal)), cv2.COLOR_LAB2RGB)
+    alto, ancho = mejorada.shape[:2]
+    if max(alto, ancho) < 960:
+        escala = 960 / max(alto, ancho)
+        mejorada = cv2.resize(mejorada, (int(ancho * escala), int(alto * escala)), interpolation=cv2.INTER_CUBIC)
+    return mejorada
+
+
 def procesar_vista(
     nombre: str,
     imagen: ImagenRGB,
@@ -50,19 +75,60 @@ def procesar_vista(
 ) -> VistaPose:
     """Ejecuta el backend y conserva una vista sin detección como resultado válido."""
 
-    personas = backend.detect(imagen.pixeles)
+    def _detectar(pixeles, **kwargs):
+        try:
+            return backend.detect(pixeles, **kwargs) if kwargs else backend.detect(pixeles)
+        except TypeError:
+            # Backends de prueba sin kwargs opcionales.
+            return backend.detect(pixeles) if not kwargs else []
+
+    personas = _detectar(imagen.pixeles)
+    intentos = ["base"]
+    if not personas and nombre == "aerea":
+        # Reintento específico aérea: umbrales más bajos + realce (no inventa landmarks).
+        intentos.append("umbrales_bajos")
+        personas = _detectar(
+            imagen.pixeles,
+            min_pose_detection_confidence=0.22,
+            min_pose_presence_confidence=0.22,
+        )
+        if not personas:
+            intentos.append("clahe")
+            mejorada = _mejorar_para_aerea(imagen.pixeles)
+            personas = _detectar(
+                mejorada,
+                min_pose_detection_confidence=0.18,
+                min_pose_presence_confidence=0.18,
+            )
+            if personas:
+                # Remapea a tamaño original si se escaló.
+                alto_o, ancho_o = imagen.alto, imagen.ancho
+                alto_n, ancho_n = mejorada.shape[:2]
+                sx, sy = ancho_o / ancho_n, alto_o / alto_n
+                remapeadas = []
+                for persona in personas:
+                    landmarks = [
+                        type(punto)(
+                            punto.indice, punto.nombre, punto.x_px * sx, punto.y_px * sy,
+                            punto.z, punto.visibility, punto.presence,
+                        )
+                        for punto in persona.landmarks
+                    ]
+                    remapeadas.append(type(persona)(landmarks=landmarks, world_landmarks=persona.world_landmarks))
+                personas = remapeadas
     indice, persona = elegir_persona(personas, configuracion.pose.vis_min, persona_indice)
     if persona is None:
         motivo = (
             f"persona_indice={persona_indice} fuera de rango; se detectaron {len(personas)} personas"
             if personas and persona_indice is not None
-            else "sin detección de pose"
+            else f"sin detección de pose ({'/'.join(intentos)})"
         )
         return VistaPose(nombre, imagen.ancho, imagen.alto, False, len(personas), motivo=motivo)
     return VistaPose(
         nombre=nombre, ancho=imagen.ancho, alto=imagen.alto, detectado=True,
         personas_detectadas=len(personas), persona_indice=indice,
         landmarks=persona.landmarks, world_landmarks=persona.world_landmarks,
+        motivo=None if intentos == ["base"] else f"aerea:{'/'.join(intentos)}",
     )
 
 
@@ -78,7 +144,7 @@ def _cargar_contexto(caso: Path) -> dict[str, Any]:
     ruta = caso / "contexto.json"
     if not ruta.is_file():
         return {}
-    with ruta.open(encoding="utf-8") as archivo:
+    with ruta.open(encoding="utf-8-sig") as archivo:
         contenido = json.load(archivo)
     if not isinstance(contenido, dict):
         raise ValueError(f"{ruta} debe contener un objeto JSON.")
@@ -203,8 +269,9 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
 
 
 def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None) -> Path:
-    """Ejecuta las fases de pose/ángulos y calcula el REBA trazable."""
+    """Ejecuta pose/ángulos/REBA, recomendaciones, residual e informe local."""
 
+    inicio = time.perf_counter()
     ruta_angulos = ejecutar_angulos(caso, raiz, backend)
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
     contexto = _cargar_contexto(caso)
@@ -226,10 +293,32 @@ def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None)
             campo = {"brazo_flexion": "brazo", "codo_flexion": "antebrazo", "muneca_flexion_extension": "muneca"}.get(angulo["medida"])
             if campo:
                 angulo["banda_reba"] = reba.grupo_b[lado][campo]
+    recomendaciones = generar_recomendaciones(reba.a_diccionario(), mediciones, contexto)
+    if not hay_ingenieria_en_riesgo_alto(recomendaciones, reba.nivel_riesgo):
+        raise RuntimeError("R3: riesgo alto/muy alto sin control de ingeniería; revisar el motor de recomendaciones.")
+    residual = recalcular_residual(mediciones, contexto, configuracion.reba, recomendaciones, inicial=reba)
+    tiempo_evaluacion = time.perf_counter() - inicio
     salida["reba"] = reba.a_diccionario()
     salida["pendientes_manuales"].extend(reba.pendientes_manuales)
-    ruta_salida = ruta_angulos.parent / "resultado.json"
+    salida["recomendaciones"] = [item.a_diccionario() for item in recomendaciones]
+    salida["riesgo_residual"] = residual
+    salida["tiempos"] = {"evaluacion_s": round(tiempo_evaluacion, 3)}
+    destino = ruta_angulos.parent
+    ruta_salida = destino / "resultado.json"
     ruta_salida.write_text(json.dumps(salida, ensure_ascii=False, indent=2), encoding="utf-8")
+    ruta_informe, tiempo_redaccion = guardar_informe(salida, destino, tiempo_evaluacion_s=tiempo_evaluacion)
+    salida["tiempos"]["redaccion_informe_s"] = round(tiempo_redaccion, 3)
+    salida["informe"] = str(ruta_informe)
+    ruta_salida.write_text(json.dumps(salida, ensure_ascii=False, indent=2), encoding="utf-8")
+    registrar(
+        destino,
+        usuario="sistema",
+        accion="evaluacion_generada",
+        campo="resultado",
+        valor_anterior=None,
+        valor_nuevo={"reba": (reba.final or {}).get("reportado"), "recomendaciones": len(recomendaciones)},
+        motivo="Evaluación automática local; pendiente de validación humana.",
+    )
     return ruta_salida
 
 

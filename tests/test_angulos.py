@@ -42,6 +42,30 @@ def test_mide_tronco_y_reporta_landmarks_faltantes(configuracion) -> None:
     assert any(medida.valor_deg is None for medida in medidas if medida.medida == "rodilla_flexion")
 
 
+def _vista_aerea() -> VistaPose:
+    # Hombros horizontales, caderas rotadas ~30°, alcance asimétrico.
+    puntos = [
+        _punto(11, 80, 120), _punto(12, 140, 120),
+        _punto(23, 95, 200), _punto(24, 145, 180),
+        _punto(13, 60, 150), _punto(14, 170, 130),
+        _punto(15, 40, 170), _punto(16, 200, 125),
+        _punto(17, 38, 172), _punto(18, 202, 125),
+        _punto(19, 42, 172), _punto(20, 198, 125),
+    ]
+    return VistaPose("aerea", 300, 300, True, 1, landmarks=puntos)
+
+
+def test_vista_aerea_mide_torsion_y_asimetria(configuracion) -> None:
+    vectores, medidas, meta = medir_vista(_vista_aerea(), configuracion, {})
+    assert "aporte_aerea" in meta
+    assert vectores.get("linea_hombros") is not None
+    torsion = next(m for m in medidas if m.medida == "tronco_torsion")
+    asimetria = next(m for m in medidas if m.medida == "alcance_asimetria")
+    assert torsion.valor_deg is not None and torsion.valor_deg > 0
+    assert asimetria.valor_deg is not None
+    assert "vista_aerea" in (torsion.banderas or [])
+
+
 def test_pipeline_de_angulos_escribe_json_y_anotacion(tmp_path, configuracion) -> None:
     raiz = tmp_path / "proyecto"
     (raiz / "config").mkdir(parents=True)

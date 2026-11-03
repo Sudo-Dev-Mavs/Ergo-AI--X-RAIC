@@ -55,6 +55,16 @@ def _mapa(landmarks: Iterable[Landmark], vis_min: float) -> dict[int, Landmark]:
     return {punto.indice: punto for punto in landmarks if punto.visibility >= vis_min}
 
 
+def _mapa_aereo(landmarks: Iterable[Landmark], vis_min: float, presence_min: float = 0.55) -> dict[int, Landmark]:
+    """Vista aérea: MediaPipe suele bajar visibility; usa presence como respaldo trazable."""
+
+    return {
+        punto.indice: punto
+        for punto in landmarks
+        if punto.visibility >= vis_min or punto.presence >= presence_min
+    }
+
+
 def _punto(mapa: dict[int, Landmark], indice: int) -> Vector2 | None:
     punto = mapa.get(indice)
     return None if punto is None else (punto.x_px, punto.y_px)
@@ -86,10 +96,9 @@ def lado_cercano(vista: VistaPose, vis_min: float) -> str | None:
     return max(candidatas, key=lambda lado: promedios[lado]) if candidatas else None
 
 
-def construir_vectores(vista: VistaPose, vis_min: float) -> dict[str, VectorSegmento]:
-    """Construye todos los vectores medibles de una vista en píxeles."""
+def construir_vectores_desde_mapa(mapa: dict[int, Landmark], lado_preferido: str | None = None) -> dict[str, VectorSegmento]:
+    """Arma vectores a partir de un mapa de landmarks ya filtrado."""
 
-    mapa = _mapa(vista.landmarks, vis_min)
     hombro_medio, cadera_media = _medio(mapa, (11, 12)), _medio(mapa, (23, 24))
     vectores: dict[str, VectorSegmento] = {}
 
@@ -111,14 +120,20 @@ def construir_vectores(vista: VistaPose, vis_min: float) -> dict[str, VectorSegm
         agregar(f"v_mano_{lado}", _punto(mapa, muneca), mano)
         agregar(f"v_muslo_{lado}", _punto(mapa, cadera), _punto(mapa, rodilla))
         agregar(f"v_pierna_{lado}", _punto(mapa, rodilla), _punto(mapa, tobillo))
-    cercano = lado_cercano(vista, vis_min)
-    if cercano == "izquierdo":
+    if lado_preferido == "izquierdo":
         agregar("v_cuello", _punto(mapa, 11), _punto(mapa, 7))
-    elif cercano == "derecho":
+    elif lado_preferido == "derecho":
         agregar("v_cuello", _punto(mapa, 12), _punto(mapa, 8))
     else:
         agregar("v_cuello", hombro_medio, _medio(mapa, (7, 8)))
     return vectores
+
+
+def construir_vectores(vista: VistaPose, vis_min: float) -> dict[str, VectorSegmento]:
+    """Construye todos los vectores medibles de una vista en píxeles."""
+
+    mapa = _mapa(vista.landmarks, vis_min)
+    return construir_vectores_desde_mapa(mapa, lado_cercano(vista, vis_min))
 
 
 def determinar_orientacion(vista: VistaPose, contexto: dict[str, Any], vis_min: float) -> tuple[int | None, str]:
@@ -282,8 +297,54 @@ def medir_vista(vista: VistaPose, configuracion: Configuracion, contexto: dict[s
         apoyo = None if tobillo_l is None or tobillo_r is None or not largo_pierna else float(abs(tobillo_l[1] - tobillo_r[1]) > configuracion.angulos.umbral_pie_levantado * largo_pierna)
         medidas.append(_medicion("apoyo_piernas_unilateral", None, vista, mapa, (23, 25, 27, 28), apoyo, "abs(y_tobillo_L-y_tobillo_R)>umbral×largo_pierna", configuracion, (1.0,)))
     elif vista.nombre == "aerea":
-        hombros, caderas = vectores.get("linea_hombros"), vectores.get("linea_caderas")
+        # Top-down suele reportar visibility baja; umbral más permisivo + presence, siempre con bandera.
+        vis_aerea = max(0.28, configuracion.pose.vis_min * 0.6)  # SUPUESTO: confirmar con Jabil
+        mapa_a = _mapa_aereo(vista.landmarks, vis_aerea)
+        vectores_a = construir_vectores_desde_mapa(mapa_a)
+        meta["vis_min_aerea"] = vis_aerea
+        meta["aporte_aerea"] = "torsión de tronco y asimetría de alcance (plano horizontal)"
+        hombros, caderas = vectores_a.get("linea_hombros"), vectores_a.get("linea_caderas")
         bruto = angulo_entre(hombros.px, caderas.px) if hombros and caderas else None
         torsion = None if bruto is None else min(bruto, 180.0 - bruto)
-        medidas.append(_medicion("tronco_torsion", None, vista, mapa, (11, 12, 23, 24), torsion, "min(angulo(linea_hombros,linea_caderas),180-angulo)", configuracion, (reba.umbral_torsion_tronco_deg,)))
+        medidas.append(
+            _medicion(
+                "tronco_torsion", None, vista, mapa_a, (11, 12, 23, 24), torsion,
+                "min(angulo(linea_hombros,linea_caderas),180-angulo)", configuracion,
+                (reba.umbral_torsion_tronco_deg,),
+                extra=["vista_aerea", "baja_visibilidad"] if torsion is not None else ["vista_aerea"],
+            )
+        )
+        alcances: dict[str, float] = {}
+        for letra, hombro, muneca in (("L", 11, 15), ("R", 12, 16)):
+            origen, destino = _punto(mapa_a, hombro), _punto(mapa_a, muneca)
+            if origen is None or destino is None or hombros is None:
+                valor = None
+            else:
+                alcance = _vector(origen, destino)
+                valor = angulo_entre(hombros.px, alcance.px) if alcance else None
+                if valor is not None:
+                    valor = min(valor, 180.0 - valor)
+                    alcances[letra] = valor
+            medidas.append(
+                _medicion(
+                    "alcance_horizontal", letra, vista, mapa_a, (11, 12, hombro, muneca), valor,
+                    "min(angulo(linea_hombros,hombro→muñeca),180-angulo)", configuracion,
+                    (20.0, 45.0),
+                    extra=["vista_aerea"],
+                )
+            )
+        if "L" in alcances and "R" in alcances:
+            asimetria = abs(alcances["L"] - alcances["R"])
+        else:
+            asimetria = None
+        medidas.append(
+            _medicion(
+                "alcance_asimetria", None, vista, mapa_a, (11, 12, 15, 16), asimetria,
+                "abs(alcance_L-alcance_R)", configuracion, (15.0, 30.0),
+                extra=["vista_aerea"],
+            )
+        )
+        # Sustituye vectores reportados por los de umbral aéreo para trazabilidad.
+        vectores = vectores_a
+        mapa = mapa_a
     return vectores, medidas, meta

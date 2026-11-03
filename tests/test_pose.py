@@ -31,4 +31,4 @@ def test_vista_sin_deteccion_no_falla(configuracion: Configuracion) -> None:
     imagen = ImagenRGB(np.zeros((20, 30, 3), dtype=np.uint8), 30, 20)
     vista = procesar_vista("frente", imagen, BackendVacio(), configuracion)
     assert not vista.detectado
-    assert vista.motivo == "sin detección de pose"
+    assert vista.motivo.startswith("sin detección de pose")

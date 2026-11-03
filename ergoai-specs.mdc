@@ -1,0 +1,268 @@
+---
+description: Especificaciones y revisión obligatoria de ErgoAI (X-RAIC 2026 Track 4, Jabil). Aplicar a TODO cambio de código, prompts, config o docs.
+alwaysApply: true
+---
+<ergoai_project_rules version="1.0" fecha="2026-11-02">
+
+  <role>
+    Eres el revisor de especificaciones de este repo. ANTES de proponer o aplicar cualquier cambio
+    (código, prompts, reglas, UI, docs) y DESPUÉS de hacerlo, lo contrastas contra las
+    especificaciones de abajo. No asumas: si algo no está especificado o hay conflicto entre fuentes,
+    dilo y pregunta; no lo rellenes con suposiciones.
+  </role>
+
+  <review_protocol>
+    <before_change>
+      1. Identifica qué IDs de especificación toca el cambio (ej. R1, R6, J-6.4.1, X-LEV-a).
+      2. Indica en 1-3 líneas qué exige cada ID aplicable.
+      3. Si el cambio contradice un ID, DETENTE y explica el conflicto antes de escribir código.
+    </before_change>
+    <after_change>
+      Termina siempre con este bloque (breve):
+      REVISIÓN DE ESPECIFICACIONES
+      - IDs tocados: ...
+      - Cumple: ... | No cumple / riesgo: ... | No verificable: ...
+      - Impacto en rúbrica: criterio(s) afectado(s) y si sube/baja puntos.
+      - Pendiente para el especialista humano o para el equipo: ...
+    </after_change>
+    <hard_stops>
+      Rechaza (y propone alternativa) cualquier cambio que:
+      - presente una recomendación como acción de piso sin paso de validación humana (R6);
+      - recomiende SOLO medidas administrativas en un caso de riesgo alto o muy alto (R3);
+      - cambie el método de puntaje por una calculadora ad hoc en lugar de REBA por ángulos (R1, R2);
+      - envíe fotos o datos de Jabil a un servicio externo sin confirmación explícita (D1, D2);
+      - procese rostros o requiera identificar personas (D3);
+      - cree una base de datos persistente de casos/personas (D4);
+      - omita el riesgo residual en el informe (R7).
+    </hard_stops>
+    <tests_required>
+      Todo cambio en cálculo de ángulos, puntajes o niveles de riesgo debe llevar o actualizar pruebas
+      unitarias con casos conocidos (tabla de ejemplo del propio método REBA y los 6 casos de Jabil cuando existan).
+      Nunca "ajustes" una tabla o umbral para que cuadre un caso; si no cuadra, repórtalo.
+    </tests_required>
+  </review_protocol>
+
+  <context>
+    <competencia>X-RAIC 2026, Track 4 "ErgoAI: asistente inteligente y validación de evaluaciones ergonómicas". Líder de track: Jabil.</competencia>
+    <fechas>
+      Documentación técnica (máx. 10 cuartillas): lunes 9 nov 2026, 9:00 am (formulario electrónico).
+      Competencia: 11 y 12 nov 2026, FIME-UANL. Pitch: 1 min preparación + 6 min demo + 3 min preguntas del jurado.
+      Jabil entrega los 6 casos durante la competencia (no antes).
+    </fechas>
+    <producto>
+      Agente que evalúa la postura de un operador a partir de fotografías de la estación y genera un informe
+      de evaluación ergonómica con recomendaciones basadas en NOM-036-1-STPS-2018, con riesgo residual
+      y flujo de validación del especialista.
+    </producto>
+    <principio_rector>El agente propone, el especialista decide.</principio_rector>
+  </context>
+
+  <requirements source="Rúbrica Track 4">
+    <input>Fotos de la estación: frente, costado y vista aérea, SIN rostro. Si falta una vista, el sistema lo avisa y baja la confianza, no inventa.</input>
+    <output>Informe de evaluación ergonómica con recomendaciones. Un informe por cada uno de los 6 casos.</output>
+    <cases>6 casos: levantamiento, transporte con auxiliar y transporte sin auxiliar; al menos uno de cada tipo.</cases>
+    <tools>Herramientas libres (LLM, visión por computadora/estimación de pose, motores de reglas, app móvil o panel web), sujetas a restricciones de Jabil sobre servicios externos.</tools>
+    <deliverables>
+      Prototipo funcional con código; informe por cada uno de los 6 casos; documentación técnica (arquitectura,
+      métodos, manejo de datos, límites conocidos, instrucciones para reproducir); presentación de 6 min.
+    </deliverables>
+    <rules>
+      El mentor orienta pero no desarrolla ni presenta. Los datos de Jabil se usan solo para este reto y no salen del equipo.
+    </rules>
+  </requirements>
+
+  <rubric total="100">
+    <criterion id="R1" pts="20" block="Desempeño técnico">
+      Puntaje REBA y nivel de riesgo coinciden con la referencia de Jabil. 6/6 = 19-20; 5/6 = 15-18; 4/6 = 11-14; ≤3 = 0-10.
+      Regla: REBA es el método principal; los demás son complemento.
+    </criterion>
+    <criterion id="R2" pts="15" block="Desempeño técnico">
+      Estimación de ángulos: % de segmentos corporales cuyo ángulo cae en el MISMO RANGO REBA que la referencia. ≥90 % = 14-15; 75-89 % = 11-13; 60-74 % = 8-10.
+      Regla: el puntaje lo definen los ángulos (el rango importa, no el grado exacto). Cada segmento debe exponerse con ángulo, rango asignado y confianza.
+    </criterion>
+    <criterion id="R3" pts="15" block="Desempeño técnico">
+      Informe y recomendaciones basadas en NOM-036-1-STPS-2018, jerarquizadas: controles de ingeniería y rediseño de estación ANTES que administrativas; prioridad a riesgo alto y muy alto.
+      Ejemplos de la propia rúbrica: si el ángulo supera cierto valor, otra herramienta; alternar sentado/de pie.
+      Solo medidas administrativas en riesgo alto/muy alto = no puede obtener Excelente.
+    </criterion>
+    <criterion id="R4" pts="8" block="Diseño e innovación">Arquitectura justificada: visión + cálculo metodológico + recomendación, en módulos separados y verificables, con componente de IA relevante.</criterion>
+    <criterion id="R5" pts="7" block="Diseño e innovación">Originalidad: aporte claro frente a una calculadora ergonómica o un asistente genérico.</criterion>
+    <criterion id="R6" pts="6" block="Viabilidad y valor">
+      El especialista puede validar, editar o aprobar cada recomendación y queda REGISTRO DE CADA CAMBIO (quién, cuándo, valor anterior, valor nuevo, motivo). Sin paso de validación = 0-2.
+    </criterion>
+    <criterion id="R7" pts="4" block="Viabilidad y valor">Riesgo residual: RECALCULAR el puntaje con las modificaciones propuestas y compararlo con el inicial (no solo mencionarlo).</criterion>
+    <criterion id="R8" pts="5" block="Viabilidad y valor">Impacto medido con datos de los casos de prueba: tiempo de evaluación y de redacción (manual vs agente) y prevención de lesiones. Instrumentar tiempos reales.</criterion>
+    <criterion id="R9" pts="10" block="Documentación">Completa y reproducible: arquitectura, métodos, manejo de datos, límites conocidos, instrucciones para reproducir. Máx. 10 cuartillas.</criterion>
+    <criterion id="R10" pts="10" block="Presentación">Pitch claro en tiempo, demo funcional y respuestas precisas.</criterion>
+    <tiebreak>1) R1  2) R2  3) R3</tiebreak>
+  </rubric>
+
+  <data_and_privacy>
+    <rule id="D1">Los datos y fotos de Jabil son solo para este reto y no se comparten fuera del equipo. No subirlos a repos públicos, issues, gists ni logs compartidos.</rule>
+    <rule id="D2">No llamar a APIs/servicios externos (LLM en la nube, visión en la nube) con imágenes o datos de Jabil sin confirmación explícita del usuario; la restricción de Jabil sobre servicios externos aún debe confirmarse. Preferir modelos locales cuando sea viable. Documentar en el README qué servicio externo se usa, con qué datos y por qué.</rule>
+    <rule id="D3">Las entradas no contienen rostros. No añadir reconocimiento facial ni identificación de personas; si una imagen trae rostro, avisar y desenfocar o rechazar.</rule>
+    <rule id="D4">El equipo NO genera una base de datos; solo implementa el método de evaluación. Prohibido persistir un catálogo de casos/personas. Excepción a confirmar con el equipo: bitácora append-only de validación (R6) por sesión, sin datos personales.</rule>
+    <rule id="D5">No incluir secretos, llaves ni rutas del equipo de Jabil en el código o en el repo.</rule>
+  </data_and_privacy>
+
+  <method>
+    <reba>
+      Método principal (R1/R2). Segmentos: cuello, tronco, piernas (Grupo A); brazo, antebrazo, muñeca (Grupo B);
+      más ajustes de carga/fuerza, agarre y actividad. Puntaje final y nivel de riesgo por Tabla C.
+      Niveles REBA estándar (Hignett y McAtamney, 2000): 1 despreciable; 2-3 bajo; 4-7 medio; 8-10 alto; 11-15 muy alto.
+      VERIFICAR estas tablas contra la referencia que entregue Jabil; la tabla de Jabil manda sobre cualquier tabla de memoria.
+      No hardcodear tablas sin cita de fuente en un comentario.
+    </reba>
+    <angles>
+      Estimar ángulos con pose estimation desde las 3 vistas (frente, costado, aérea). Cada ángulo reportado con: segmento, vista de origen,
+      valor, rango REBA y confianza. Si la confianza es baja o falta vista, marcarlo para revisión del especialista en lugar de adivinar.
+    </angles>
+    <architecture_guidance>
+      Módulos separados y verificables (R4): (1) visión/pose → ángulos, (2) motor determinista de puntaje REBA (sin LLM),
+      (3) generador de recomendaciones (reglas NOM + LLM solo para redacción/priorización, con citas a la norma),
+      (4) recalculador de riesgo residual, (5) flujo de validación y bitácora, (6) generador de informe.
+      El LLM nunca calcula puntajes; los puntajes salen del motor determinista.
+    </architecture_guidance>
+    <complementary_methods source="Excel 16-PE80-6500-00014 rev H">
+      Complemento, no sustituto de REBA. Ver sección workbook_spec.
+    </complementary_methods>
+  </method>
+
+  <recommendations_spec>
+    <hierarchy>
+      Orden obligatorio de controles (NOM-036-1-STPS-2018 y R3):
+      1) Eliminación / rediseño de estación y de la tarea  2) Controles de ingeniería (herramienta, asistencia mecánica, altura, alcance, ayudas)
+      3) Controles administrativos (rotación, pausas, capacitación) solo como complemento, nunca como única medida en riesgo alto/muy alto.
+    </hierarchy>
+    <ordering>Riesgo muy alto y alto primero. Cada recomendación incluye: segmento/inciso que la origina, problema, solución, tipo de control, prioridad, riesgo esperado tras aplicarla.</ordering>
+    <record_schema source="hoja OBSERVACIONES Y MEJORAS del Excel">
+      Campos espejo del formato de Jabil: # evaluación (1-5 o Mov), identificador (inciso A-K), problema (descripción), solución/mejora (plan),
+      responsable (dueño de la acción), fecha compromiso (día/mes/año). Añadir: estado de validación, validador, historial de cambios.
+    </record_schema>
+    <validation_flow rubric="R6">
+      Estados mínimos: propuesta → en revisión → editada | aprobada | rechazada. Solo "aprobada" puede mostrarse como acción de piso.
+      Toda transición y edición registra: usuario, fecha-hora, valor anterior, valor nuevo, motivo.
+      Priorizar en la UI los casos de riesgo alto y muy alto. El informe muestra el estado de validación de cada recomendación.
+    </validation_flow>
+    <residual_risk rubric="R7">
+      Para cada recomendación (o conjunto) se define el cambio de postura/ángulo/carga esperado, se recalcula REBA con el mismo motor y se reporta
+      puntaje inicial, puntaje residual, nivel inicial, nivel residual. Declarar supuestos. No inventar reducciones sin cambio calculable.
+    </residual_risk>
+    <report_sections>
+      Datos del caso; fotos usadas (sin rostros); ángulos por segmento con confianza; puntaje REBA desglosado y nivel; recomendaciones jerarquizadas
+      con cita a NOM-036-1; riesgo residual (antes/después); estado de validación y bitácora; límites y supuestos; tiempo de generación.
+    </report_sections>
+  </recommendations_spec>
+
+  <workbook_spec source="15337404-16-PE80-6500-00014-H_1.xlsm (Evaluación de ergonomía, Ingeniería de proceso)">
+    <sheets>Mov, Levantamiento (1), Transporte (2), Equipo (3), sin auxiliar (4), con auxiliar (5), Resultado, OBSERVACIONES Y MEJORAS, Fotos de la estacion, EAWS.</sheets>
+    <header_fields>Negocio, Línea, Área, Fecha (dd/mmm/aaaa), Modelo, Realizado por. Reusar estos campos en el informe.</header_fields>
+    <colors>Verde, Naranja, Rojo, Morado (4 niveles; en hojas 4 y 5: Bajo, Medio, Alto, Muy alto). Mapeo inferido por el orden de columnas: Verde=Bajo, Naranja=Medio, Rojo=Alto, Morado=Muy alto. Confirmar con Jabil.</colors>
+    <lifting sheet="Levantamiento (1)" scoring="suma de factores (E163)">
+      a) Peso de carga/frecuencia: verde 0, naranja 4, rojo 6, morado 10.
+      b) Distancia horizontal manos-parte baja de espalda: 0 / 3 / 6.
+      c) Región de levantamiento vertical: 0 / 1 / 3.
+      d) Torsión y flexión lateral del torso: 0 / 1 / 2.
+      e) Restricciones posturales: 0 / 1 / 3.
+      f) Acoplamiento mano-carga: 0 / 1 / 2.
+      g) Superficie de trabajo: 0 / 1 / 2.
+      h) Otros factores ambientales: 0 / 1 / 2 (dos o más factores presentes = rojo).
+      Una sola marca por factor; más de una marca = error de captura.
+    </lifting>
+    <transport sheet="Transporte (2)" scoring="suma de factores (E153)">
+      Mismos a, b, d(restricciones), e(acoplamiento), f(superficie), g(ambiente) que levantamiento, más:
+      c) Carga asimétrica sobre el torso: 0 / 1 / 2 / 3 (verde, naranja, rojo, morado).
+      h) Distancia de transporte: 0 / 1 / 3.
+      j) Obstáculos en la ruta: 0 / 1 / 3 (escaleras = rojo; más de un factor = rojo).
+    </transport>
+    <equipment sheet="Equipo (3)">Manejo en equipo (2+ personas): peso y número de operadores, distancia manos-espalda, región vertical, torsión, restricciones, acoplamiento, superficie, ambiente y comunicación/coordinación/control.</equipment>
+    <push_pull sheets="sin auxiliar (4), con auxiliar (5)">
+      Empuje/arrastre. Factores: actividad y peso (rodando, girando sobre su base, arrastrar/deslizar; en 5: tipo de equipo auxiliar), postura, acoplamiento,
+      patrón de trabajo (repetitivo = 5 o más traslados/min), distancia por viaje, superficie, obstáculos, otros factores (carga inestable, obstruye visión, bordes filosos/caliente, iluminación, temperatura/humedad, viento).
+      En 5 además: condición del equipo auxiliar. Si la carga excede la capacidad nominal del equipo: INACEPTABLE, no se realiza la actividad.
+      Los puntajes por factor de estas dos hojas no se extrajeron todavía: no inventarlos; leerlos del Excel antes de implementar.
+    </push_pull>
+    <mov_sheet sheet="Mov">
+      Contiene checks de estación y un cálculo por tablas A/B/C/D/F con estructura RULA (ver known_conflicts C1):
+      puntaje C = brazo+antebrazo+muñeca(+actividad muscular+carga) tope 8; puntaje D = cuello+tronco+piernas(+actividad+carga) tope 7;
+      final = INDEX(TablaC, C, D) en 1-7; nivel 1-4: finales 1-2 → 1, 3-4 → 2, 5-6 → 3, 7 → 4.
+      Checks de estación (columna K): espacio para pies ≥15 cm; altura reposapiés >21 y &lt;37 cm; profundidad reposapiés 15 cm ±2;
+      altura de área de trabajo &gt;96 y &lt;120 cm (ver C2); espacio piernas profundidad &gt;55 cm y ancho &gt;60 cm; espacio asiento &gt;30 cm; espesor de mesa &lt;10 cm;
+      tapete antifatiga si de pie; accesibilidad: acceso &gt;= 800 mm y distancia entre operadores &gt;= 800 mm; altura de ayuda visual 1,400-1,600 mm y distancia mínima 40 cm;
+      iluminación por tipo de actividad (1 empaque/oficinas, 2 laboratorios/maquinado/ensamble, 3 ensambles de precisión, 4 alta distinción de detalle/OBA con lupa);
+      evaluación subjetiva del operador (Muy bien, Bien, Algunas mejoras, Molesto, Muy doloroso).
+      Fuerza: tabla de fuerza aplicada/requerida (N) por tipo de acción (empujar/jalar con y sin soporte de tronco, trabajo con brazo, pedal, herramientas manuales) con velocidad, duración, frecuencia y duración de tarea.
+    </mov_sheet>
+    <eaws sheet="EAWS">Evaluación simplificada tipo EAWS: tiempo de ciclo (s), frecuencia (veces/ciclo), duración de exposición (min/turno), fuerza (kg), flexión de tronco (°), torsión de tronco (°), trabajo sobre hombro (0/1), trabajo bajo rodilla (0/1), duración de turno/tarea (h), tiempo del movimiento evaluado (s). Salidas: puntaje postura, fuerza, frecuencia, total y nivel.</eaws>
+    <macros>El .xlsm tiene VBA (OptionButtons que escriben valores en celdas, macros de copiar/pegar valores). No hay lógica de cálculo crítica en VBA; la lógica está en fórmulas. No portar macros a ciegas.</macros>
+    <not_extracted>Las tablas de interpretación "nivel de riesgo → acción" de las hojas 1-5 son imágenes; extraerlas (o tomarlas de la NOM-036-1) antes de fijar umbrales. No inventarlos.</not_extracted>
+  </workbook_spec>
+
+  <jabil_layout_doc id="16-PE30-6500-00023" rev="O" title="Administración y Control de Layouts" released="2026-08-27">
+    <scope_note>Documento de layouts; solo aplican a este proyecto las secciones de ergonomía y diseño de estación. Los formatos que cita: 16-PE80-6500-00014 (evaluación de ergonomía), 16-PE80-6500-00091 (evaluación de cargas, negocios nuevos), 16-HS80-8000-00021 (MOC).</scope_note>
+    <process>
+      J-6.4.2: la evaluación de ergonomía se presenta con el formato 16-PE80-6500-00014 y el MOC. J-6.4.6: en el año fiscal se evalúan TODAS las estaciones con ese formato.
+      J-6.4.5: para negocios nuevos usar 16-PE80-6500-00091 (evaluación de cargas).
+    </process>
+    <lifting_limits>
+      J-6.4.1 Límite de carga manual por persona: 14 kg; si se sobrepasa, considerar asistencia mecánica.
+      J-6.4.2 Levantamiento en 2 o más personas solo como contención y sin equipo/lifter/grúa disponible; tabla verde (valor 0): 2 personas &lt; 19 kg, 3 personas &lt; 23 kg;
+      tabla naranja (valor 4): 2 personas ≥ 19 y &lt; 28 kg, 3 personas ≥ 23 y &lt; 42 kg, 4 personas ≥ 23 y &lt; 56 kg (la fuente del PDF dice "4 personas ≥ 23 y &lt; 56"; verificar el límite inferior con Jabil).
+      La tabla naranja requiere personas en condiciones físicas óptimas con revisión del departamento médico.
+      J-6.4.3 Espacio libre mínimo de 60 cm para el levantador, sin objetos que obliguen a inclinarse.
+      J-6.4.4 Evitar levantar desde el piso o sobre la cabeza. Punto más alto de toma sin escaleras: 1.7 m en racks estáticos; 1.6 m en tarimas o carros. Excepciones justificadas por requerimiento de cliente o dimensiones del producto y liberadas con MOC.
+    </lifting_limits>
+    <station_design>
+      J-7.2.1 Sentado si: objetos al alcance, objetos manipulados &lt; 3 kg, ensamble fino, uso de pedales. De pie si: objetos &gt; 3 kg u operaciones separadas con desplazamientos frecuentes.
+      J-7.2.2 Ley silla: análisis de ergonomía conforme a STPS con 7 preguntas (tiempo de pie sin descanso, posibilidad de cambiar postura, tipo de superficie de trabajo, características del calzado, espacio disponible para moverse, malestares reportados, pausas), puntaje total: verde no aplica; amarillo y rojo sí aplica.
+        La ley pide evitar más de 3 horas continuas de bipedestación, sentando a la persona al menos 5 minutos. Baño no cuenta como interrupción; comedor en la hora de comida sí.
+        Estrategias: (a) silla de descanso 5 min con relevo; (b) rotar entre estaciones de pie y sentadas, con análisis y aprobación del supervisor de producción.
+        Ubicación de silla marcada en piso ("SILLA"), documentada en layout, sin obstruir pasillos; fijarla requiere validar con EHS y Facilities. La responsabilidad de IE termina al definir el espacio; la decisión (silla extra o rotación) es compartida IE/Producción/WCM.
+      J-7.2.2.2 Zonas de alcance: lo de uso regular en zonas 1 y 2; zona 3 si la frecuencia es menor a una vez por pieza; zonas 4 y 5 fuera de alcance: mover el material usado a zonas 1-2.
+      J-7.2.3 Altura de área de trabajo recomendada para CUU: 95-125 cm; fuera de rango se revisa.
+      J-7.3.3 Distancia mínima entre operadores 80 cm (de punto medio a punto medio). Estación sentada: mesa con mínimo 55 cm de profundidad libre para piernas y 60 cm de ancho.
+      Reposapiés (de pie o sentado): altura entre 21 y 37 cm y 15 cm hacia atrás desde el borde de la mesa. Espesor de mesa ≤ 10 cm (si más, validar que no hay estrés por contacto). De pie: mínimo 15 cm de profundidad para meter los pies.
+      J-7.3.3.1 Silla estándar: en áreas EPA, silla ESD; 5 patas, área de reposapiés, altura ajustable, respaldo no rígido, poliuretano. Mismo modelo en toda el área.
+      J-7.3.3.2 Conveyor: eléctricos con guardas en partes móviles (engranes, motores, poleas); de gravedad no mayores a 3 m; altura entre 0.5 y 1.4 m; requiere análisis de ergonomía; acceso a áreas de trabajo de mínimo 80 cm; evitar inspecciones sobre el conveyor; preferir que permita estaciones con silla.
+      J-7.1 Pasillos internos de BE: entre estaciones 0.9 m (tránsito bajo), 1.2 m, 1.5 m (movimiento de material en carros/tarimas); mínimo 90 cm para flujo de material en pasillo de BE.
+    </station_design>
+    <engineering_over_admin>
+      Usar estos límites y controles como biblioteca de recomendaciones de ingeniería con cita a la sección (ej. "J-7.3.3: ajustar altura de reposapiés a 21-37 cm").
+      La NOM-036-1-STPS-2018 sigue siendo la base normativa obligatoria; el documento de Jabil es política interna complementaria.
+    </engineering_over_admin>
+  </jabil_layout_doc>
+
+  <known_conflicts>
+    <conflict id="C1" severity="alta">
+      La rúbrica exige REBA como método principal, pero la hoja "Mov" del Excel de Jabil está estructurada como RULA (brazo/antebrazo/muñeca, tablas A/B/C, puntaje final 1-7, nivel 1-4; la etiqueta dice "Puntuación final RULA(1-7)").
+      No mezclar. Implementar REBA para R1/R2 y tratar RULA/EAWS/NOM-036-1 como complemento. Confirmar con Jabil cuál es la "referencia" de puntaje y con qué tabla REBA se califica.
+    </conflict>
+    <conflict id="C2" severity="media">Altura de área de trabajo: Excel pide &gt;96 y &lt;120 cm; el documento de layouts pide 95-125 cm. Hasta aclarar, usar el rango más estricto (96-120) para marcar alertas y mostrar ambas fuentes.</conflict>
+    <conflict id="C3" severity="media">Excel marca reposapiés "&gt;21 y &lt;37 cm"; el documento dice "entre 21 y 37 cm". Tratar 21 y 37 como borde a confirmar.</conflict>
+    <conflict id="C4" severity="media">Tabla naranja de levantamiento en 4 personas: el PDF muestra "≥ 23 y &lt; 56"; el patrón de las otras filas sugiere un límite inferior distinto. Confirmar antes de codificarla.</conflict>
+    <conflict id="C5" severity="baja">Notas internas sin resolver en el Excel (hoja Mov, columna BH): "falta duración de la actividad en segundos" y "cambiar fórmula y quitar puntos 4 y 5 de piernas". No replicar esas fórmulas sin verificar.</conflict>
+    <conflict id="C6" severity="media">Rúbrica: "el equipo no genera una base de datos" vs. R6: "queda registro de cada cambio". Resolver con bitácora ligera por sesión, no con catálogo de casos; confirmar en la sesión con ingenieros de Jabil.</conflict>
+    <conflict id="C7" severity="baja">La sesión con ingenieros de Jabil estaba prevista para el 28-oct-2026 3:00 pm. Si ya ocurrió, registrar en el repo (docs/decisiones.md) lo que se aclaró sobre C1-C6.</conflict>
+  </known_conflicts>
+
+  <documentation_rules rubric="R9">
+    <rule>Mantener README con arquitectura, métodos, manejo de datos, límites conocidos e instrucciones de reproducción paso a paso (versiones fijadas, semillas, comando único para generar los 6 informes).</rule>
+    <rule>Todo cambio de comportamiento actualiza la documentación en el mismo cambio.</rule>
+    <rule>Mantener la documentación técnica exportable a un máximo de 10 cuartillas; resumir, no crecer sin control. Fecha límite de entrega: lunes 9-nov-2026, 9:00 am.</rule>
+    <rule>Declarar límites honestamente: precisión de pose por vista, casos fuera de distribución, qué NO evalúa el sistema.</rule>
+  </documentation_rules>
+
+  <demo_rules rubric="R10, R8">
+    <rule>Mantener un comando/pantalla de demo que corra los 6 casos de punta a punta y mida tiempo de evaluación y de redacción para R8.</rule>
+    <rule>Tener plan B sin red (casos pre-cargados) si el servicio externo falla durante el pitch.</rule>
+    <rule>El pitch cabe en 6 minutos: método, validación humana, riesgo residual e impacto con datos.</rule>
+  </demo_rules>
+
+  <coding_conventions>
+    <rule>Funciones puras y probadas para: ángulo → rango REBA → puntaje → nivel. Sin LLM en esa cadena.</rule>
+    <rule>Cada número normativo (umbral, tabla) vive en un solo archivo de datos con campo "fuente" (ID de especificación o sección de la norma).</rule>
+    <rule>Salidas del LLM validadas contra esquema; si no valida, se reintenta o se marca para revisión humana, nunca se muestra como definitiva.</rule>
+    <rule>Idioma del informe y de la interfaz: español (México). Unidades SI; mostrar mm/cm/kg como en los formatos de Jabil.</rule>
+  </coding_conventions>
+
+</ergoai_project_rules>

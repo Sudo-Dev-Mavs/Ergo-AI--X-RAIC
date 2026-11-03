@@ -15,10 +15,13 @@ dependencies = [
   "pyyaml",
   "pydantic>=2",
   "pytest",
+  "windnd>=1.0.7",
 ]
 
 [project.scripts]
 ergoai = "ergoai.cli:main"
+
+[project.gui-scripts]
 ergoai-gui = "ergoai.gui:main"
 
 [tool.pytest.ini_options]
