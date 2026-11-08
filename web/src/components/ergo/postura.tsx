@@ -6,6 +6,16 @@ import { NOMBRE_BANDERA, NOMBRE_MEDIDA, SEGMENTO } from "@/lib/dominio"
 import { cn } from "@/lib/utils"
 
 const ORDEN = ["Tronco", "Cuello", "Piernas", "Brazos", "Antebrazos", "Muñecas"]
+const NOMBRE_VISTA: Record<string, string> = { costado: "costado", frente: "frente", aerea: "aérea" }
+
+/** De dónde salió la medida: su vista primaria, la vista de respaldo, la pose 3D o el contexto. */
+function origenMedida(angulo: Angulo): string {
+  const metodo = angulo.metodo ?? ""
+  if (metodo.startsWith("respaldo 3D")) return `pose 3D de la vista ${NOMBRE_VISTA[angulo.vista] ?? angulo.vista}`
+  if (angulo.vista === "contexto") return "según la postura declarada"
+  if (metodo.startsWith("respaldo")) return `respaldo con la vista ${NOMBRE_VISTA[angulo.vista] ?? angulo.vista}`
+  return `vista ${NOMBRE_VISTA[angulo.vista] ?? angulo.vista}`
+}
 
 export function PanelPostura({ estado, ocupado, onCorregir }: {
   estado: EstadoCaso
@@ -52,7 +62,7 @@ export function PanelPostura({ estado, ocupado, onCorregir }: {
                       <td className="py-2.5 pr-3">
                         <span className="font-medium">{NOMBRE_MEDIDA[angulo.medida] ?? angulo.medida}</span>
                         {angulo.lado && <span className="ml-1.5 text-graphite">{angulo.lado === "L" ? "izquierdo" : "derecho"}</span>}
-                        <span className="block text-[12px] text-graphite">vista {angulo.vista}</span>
+                        <span className="block text-[12px] text-graphite">{origenMedida(angulo)}</span>
                       </td>
                       <td className="py-2.5 pr-3 text-right">
                         <span className={cn("t-num text-[24px] leading-none", angulo.valor_deg == null && "text-graphite")}>

@@ -10,6 +10,8 @@ Beta local para evaluar posturas de trabajo a partir de fotografías y contexto 
 - Soporte para vistas de frente, costado y aérea; selección de la persona de mayor área visible.
 - Corrección de rotación EXIF, landmarks en píxeles y almacenamiento de landmarks 3D de MediaPipe.
 - Vectores, ángulos, orientación lateral y banderas de baja visibilidad, escorzo y cercanía a umbrales.
+- Respaldos entre vistas y pose 3D cuando la vista primaria no puede sostener una medida; las estimaciones de respaldo se identifican explícitamente.
+- Imágenes anotadas sin rostro, con flechas de vectores, valores junto a la articulación y color de banda REBA.
 - Puntaje REBA por lado, con carga, agarre, actividad, overrides del especialista y pendientes manuales cuando un dato no se puede medir.
 - Recomendaciones jerarquizadas (ingeniería → rediseño → administrativas) basadas en la NOM-036-1-STPS-2018 y en los lineamientos Jabil (16-PE30-6500-00023 §6.4, formato 16-PE80-6500-00014), cada una con su fundamento y su reducción esperada de REBA.
 - Riesgo residual recalculado con el mismo método REBA aplicando los controles vigentes, y comparado contra el inicial.
@@ -113,9 +115,12 @@ uv run python -m ergoai.cli validar out/caso01 aprobar_informe --usuario "Ing. P
 La anotación manual y la evaluación de precisión se ejecutan localmente:
 
 ```powershell
+uv run python scripts/evaluar_precision.py --plantilla data/validacion/caso01
 uv run python scripts/anotar_manual.py data/validacion/caso01/costado.jpg --vista costado
 uv run python scripts/evaluar_precision.py
 ```
+
+El protocolo está en [`docs/PROTOCOLO_VALIDACION.md`](docs/PROTOCOLO_VALIDACION.md). El reporte se escribe en `out/precision/reporte.html` y separa los casos de validación de los casos de la interfaz.
 
 ## Pruebas
 
@@ -131,9 +136,9 @@ La suite contiene pruebas de geometría, signos, relación de aspecto, selecció
 |---|---|---|
 | Fase 0 — Preparación | Implementada | Proyecto `uv`, configuración Pydantic, modelo descargable y pruebas. |
 | Fase 1 — Imagen y pose | Implementada | Carga EXIF/RGB, MediaPipe Tasks, varias personas y esqueleto sin rostro. |
-| Fase 2 — Vectores y ángulos | Parcial | Medición 2D, orientación, corrección de cámara y banderas disponibles. Faltan respaldos completos entre vistas/3D y anotaciones con flechas, color REBA y etiquetas junto a cada articulación. |
+| Fase 2 — Vectores y ángulos | Implementada | Medición 2D, orientación, respaldos entre vistas/3D y anotaciones con flechas, color REBA y etiquetas junto a cada articulación. Las flexiones 3D de respaldo se marcan con menor confianza. |
 | Fase 3 — REBA | Implementada | Bandas, tablas A/B/C, ambos lados, contexto, overrides y `resultado.json`. |
-| Fase 4 — Precisión | Parcial | Anotación manual, comparación y CSV disponibles. Falta correr la validación completa con las fotografías/referencias reales y demostrar la meta ≥90 %. |
+| Fase 4 — Precisión | Pendiente de datos | Protocolo, plantillas y reporte HTML/CSV disponibles. Falta correr la validación con fotografías/referencias reales y demostrar la meta ≥90 %. |
 | Fase 5 — Complementos | Parcial | Módulos base de RULA, EAWS, NOM-036 y muñeca; no alteran REBA. Falta integrar los complementos a la interfaz y validar HandLandmarker con referencias reales. |
 | Informe y recomendaciones | Implementada | Motor de reglas NOM-036-1 + Jabil con jerarquía de controles, fundamento y Δ REBA por recomendación; informe HTML y CSV 00014. |
 | Riesgo residual | Implementada | REBA recalculado con los efectos declarados de los controles no rechazados; las medidas administrativas no cuentan. |

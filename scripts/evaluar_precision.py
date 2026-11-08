@@ -1,45 +1,35 @@
-"""Genera CSV y resumen de precisión para casos de validación locales."""
+"""Evalúa los casos de validación y genera el reporte de precisión (criterios 1 y 2 de la rúbrica).
+
+    uv run python scripts/evaluar_precision.py                         # data/validacion → out/precision/
+    uv run python scripts/evaluar_precision.py --reusar                # no reevalúa casos ya procesados
+    uv run python scripts/evaluar_precision.py --plantilla data/validacion/caso01
+
+Protocolo completo: docs/PROTOCOLO_VALIDACION.md
+"""
 
 import argparse
-import csv
-import json
 from pathlib import Path
 
-from ergoai.config import cargar_configuracion
-from ergoai.precision import angulos_desde_landmarks_referencia, comparar_angulos, resumir_precision
+from ergoai.reporte_precision import crear_plantilla, generar_reporte
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compara resultados ErgoAI contra referencia manual")
-    parser.add_argument("--validacion", type=Path, default=Path("data/validacion"))
-    parser.add_argument("--out", type=Path, default=Path("out"))
-    parser.add_argument("--csv", type=Path, default=Path("out/precision.csv"))
+    parser = argparse.ArgumentParser(description="Reporte de precisión de ErgoAI contra referencias de Jabil")
+    parser.add_argument("--validacion", type=Path, default=Path("data/validacion"), help="carpeta con un subdirectorio por caso")
+    parser.add_argument("--salida", type=Path, default=Path("out/precision"), help="dónde escribir resultados y reporte")
+    parser.add_argument("--reusar", action="store_true", help="no reevaluar los casos que ya tienen resultado.json")
+    parser.add_argument("--plantilla", type=Path, help="crea un referencia.json para completar en esa carpeta de caso y termina")
     args = parser.parse_args()
+    if args.plantilla:
+        print(f"Plantilla creada: {crear_plantilla(args.plantilla)}")
+        return
     raiz = Path(__file__).resolve().parents[1]
-    configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
-    filas, casos = [], []
-    for referencia_ruta in sorted(args.validacion.glob("*/referencia.json")):
-        caso_id = referencia_ruta.parent.name
-        resultado_ruta = args.out / caso_id / "resultado.json"
-        if not resultado_ruta.exists():
-            print(f"{caso_id}: falta {resultado_ruta}; se omite.")
-            continue
-        referencia, automatico = json.loads(referencia_ruta.read_text(encoding="utf-8")), json.loads(resultado_ruta.read_text(encoding="utf-8"))
-        if "angulos" not in referencia:
-            contexto_ruta = referencia_ruta.parent / "contexto.json"
-            contexto = json.loads(contexto_ruta.read_text(encoding="utf-8")) if contexto_ruta.exists() else {"caso_id": caso_id}
-            referencia = angulos_desde_landmarks_referencia(referencia, contexto, configuracion)
-        filas.extend(comparar_angulos(caso_id, automatico.get("angulos", []), referencia["angulos"]))
-        casos.append((automatico, referencia))
-    resumen = resumir_precision(filas, casos)
-    args.csv.parent.mkdir(parents=True, exist_ok=True)
-    with args.csv.open("w", encoding="utf-8", newline="") as archivo:
-        escritor = csv.writer(archivo)
-        escritor.writerow(("caso_id", "medida", "lado", "error_absoluto_deg", "misma_banda_reba", "vista", "banderas"))
-        for fila in resumen["fallos"]:
-            escritor.writerow((fila.caso_id, fila.medida, fila.lado, fila.error_absoluto_deg, fila.misma_banda_reba, fila.vista, fila.banderas))
-    print(json.dumps({clave: valor for clave, valor in resumen.items() if clave != "fallos"}, ensure_ascii=False, indent=2))
-    print(f"CSV: {args.csv}")
+    resumen = generar_reporte(args.validacion, raiz, args.salida, args.reusar)
+    c1, c2 = resumen["criterio_1"], resumen["criterio_2"]
+    print(f"Casos evaluados: {resumen['casos']}")
+    print(f"Criterio 1 (REBA y nivel coinciden): {c1['coinciden']} de {c1['comparables']} -> {c1['rubrica']}")
+    print(f"Criterio 2 (segmentos en la misma banda): {c2['misma_banda_pct']} % de {c2['segmentos']} ({c2['sin_estimar']} sin estimar) -> {c2['rubrica']}")
+    print(f"Reporte: {args.salida / 'reporte.html'}")
 
 
 if __name__ == "__main__":

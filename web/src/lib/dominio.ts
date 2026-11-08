@@ -57,6 +57,7 @@ export const NOMBRE_BANDERA: Record<string, string> = {
   baja_visibilidad: "baja visibilidad",
   cerca_de_umbral: "cerca del límite REBA",
   posible_escorzo: "posible escorzo",
+  vista_respaldo: "medida de respaldo",
   baja_confianza_metodo: "método aproximado",
 }
 
