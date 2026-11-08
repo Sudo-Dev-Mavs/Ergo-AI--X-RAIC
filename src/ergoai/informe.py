@@ -206,8 +206,8 @@ figcaption {{ font-size:.8rem; color:var(--suave); }}
 {sello}
 <section class="tarjetas">
   <div class="tarjeta"><div class="titulo">Riesgo inicial</div><div class="valor">{_insignia(ini['nivel_riesgo'], ini['reba'])}</div><div class="chico">Nivel de acción {ini['nivel_accion'] if ini['nivel_accion'] is not None else '—'}</div></div>
-  <div class="tarjeta"><div class="titulo">Riesgo residual esperado</div><div class="valor">{_insignia(res['nivel_riesgo'], res['reba'])}</div><div class="chico">con {len(residual['recomendaciones_aplicadas'])} controles vigentes</div></div>
-  <div class="tarjeta"><div class="titulo">Reducción</div><div class="valor">{'—' if reduccion is None else f"−{reduccion} pts ({residual['reduccion_pct']} %)"}</div></div>
+  <div class="tarjeta"><div class="titulo">Riesgo residual esperado</div><div class="valor">{_insignia(res['nivel_riesgo'], res['reba'])}</div><div class="chico">con {len(residual['recomendaciones_aplicadas'])} {'control vigente' if len(residual['recomendaciones_aplicadas']) == 1 else 'controles vigentes'}</div></div>
+  <div class="tarjeta"><div class="titulo">Reducción</div><div class="valor">{'—' if reduccion is None else f"{'−' if reduccion > 0 else ''}{reduccion} pts ({residual['reduccion_pct']} %)"}</div></div>
   <div class="tarjeta"><div class="titulo">Tiempo del agente</div><div class="valor">{'—' if tiempo is None else f'{tiempo:.1f} s'}</div><div class="chico">{'Validación humana: ' + str(minutos_validacion) + ' min' if minutos_validacion is not None else 'análisis + borrador del informe'}</div></div>
 </section>
 

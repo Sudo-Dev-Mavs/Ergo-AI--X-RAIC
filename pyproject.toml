@@ -15,11 +15,16 @@ dependencies = [
   "pyyaml",
   "pydantic>=2",
   "pytest",
+  "fastapi>=0.162.2",
+  "uvicorn[standard]>=0.54.0",
+  "python-multipart>=0.0.33",
+  "httpx>=0.28.1",
 ]
 
 [project.scripts]
 ergoai = "ergoai.cli:main"
-ergoai-gui = "ergoai.gui:main"
+ergoai-gui = "ergoai.servidor:main"
+ergoai-tk = "ergoai.gui:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -28,3 +33,9 @@ addopts = "-ra"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ergoai"]
+artifacts = ["src/ergoai/web/dist/**"]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22.3",
+]

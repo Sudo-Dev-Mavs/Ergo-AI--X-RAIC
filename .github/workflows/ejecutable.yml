@@ -1,0 +1,34 @@
+name: Ejecutable
+
+# Construye ErgoAI para Windows y Linux. Se lanza a mano desde la pestaña Actions
+# o al publicar una etiqueta v*. Los paquetes quedan como artefactos de la ejecución.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  construir:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Dependencias
+        run: uv sync --python 3.12
+      - name: Pruebas
+        run: uv run pytest -q
+      - name: Modelo de pose
+        run: uv run python scripts/descargar_modelo.py
+      - name: Empaquetar
+        run: uv run python scripts/construir_ejecutable.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ErgoAI-${{ runner.os }}
+          path: |
+            dist/ErgoAI-*.zip
+            dist/ErgoAI-*.tar.gz
+          if-no-files-found: error

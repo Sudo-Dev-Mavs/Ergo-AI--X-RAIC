@@ -31,20 +31,52 @@ uv run python scripts/descargar_modelo.py
 
 ## Uso
 
-### Interfaz gráfica (recomendada para la beta)
+### Ejecutable de escritorio (para usar ErgoAI sin instalar nada)
+
+Descomprime `ErgoAI-<sistema>.zip` / `.tar.gz` y abre **ErgoAI** (`ErgoAI.exe` en Windows). La app abre su propia ventana (Edge, Chrome, Chromium o Brave en modo aplicación) y al cerrarla se detiene. En Linux, `./instalar-acceso-directo.sh` la agrega al lanzador de aplicaciones.
+
+- Los casos, resultados, informes y la bitácora se guardan en `~/ErgoAI` (en Windows, `C:\Users\<usuario>\ErgoAI`). Usa `--datos <carpeta>` o la variable `ERGOAI_DATOS` para cambiarla.
+- Los umbrales se copian a `~/ErgoAI/config/umbrales.yaml` la primera vez; los ajustes del especialista no se sobrescriben al actualizar.
+- El registro de errores queda en `~/ErgoAI/ergoai.log`.
+
+Para construirlo (PyInstaller no compila de forma cruzada: el `.exe` se construye en Windows y el binario de Linux en Linux):
+
+```powershell
+uv sync
+uv run python scripts/descargar_modelo.py
+uv run python scripts/construir_ejecutable.py          # dist/ErgoAI/ y dist/ErgoAI-<sistema>.zip|tar.gz
+uv run python scripts/construir_ejecutable.py --web    # además recompila la interfaz (requiere Node)
+```
+
+### Interfaz web local (recomendada)
 
 ```powershell
 uv run ergoai-gui
 ```
 
-1. Elige las fotos disponibles de frente, costado y/o aérea.
-2. Indica caso, postura, carga, agarre y actividad.
-3. Pulsa **Analizar ergonomía**.
-4. Consulta el REBA, nivel de riesgo, riesgo residual, pendientes e imagen anotada.
-5. En **Validación del especialista** aprueba, rechaza o edita cada recomendación y pulsa **Aprobar informe**. Para aprobar, todas deben estar decididas, las acciones aprobadas necesitan responsable y un caso de riesgo alto/muy alto requiere al menos un control de ingeniería o rediseño aprobado.
-6. **Bandeja de casos** muestra todos los casos con los de mayor riesgo primero.
+Abre `http://127.0.0.1:8765/` en el navegador. El servidor escucha solo en este equipo; las fotos y resultados no salen de él. La interfaz ya viene compilada en `src/ergoai/web/dist`, así que no hace falta Node para usarla.
 
-Los artefactos se guardan en `out/<caso_id>/`: `resultado.json`, `validacion.json` (decisiones y bitácora), `informe.html` y `acciones_00014.csv`.
+1. **Casos**: lista ordenada por riesgo, con los casos alto/muy alto sin validar primero. Cada fila muestra el REBA inicial y el residual esperado sobre la escala 1–15.
+2. **Nueva evaluación**: sube las fotos de costado, frente y aérea, elige el tipo de tarea (levantamiento, transporte con o sin auxiliar), la carga, el agarre y los ajustes que la foto no muestra, y pulsa **Analizar postura**.
+3. **Caso**: goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), más cuatro pestañas:
+   - **Recomendaciones**: aprueba, edita, rechaza con motivo o agrega controles; **Aprobar informe** se habilita cuando no quedan pendientes. Las propuestas se dibujan punteadas y las aprobadas con trazo sólido.
+   - **Postura medida**: ángulos por segmento con su banda REBA; el especialista puede corregir un ángulo y ErgoAI recalcula y lo registra.
+   - **Bitácora**: historial firmado con verificación de la cadena SHA-256.
+   - **Informe**: vista previa, impresión a PDF y CSV para el formato 00014.
+
+Escribe tu nombre en **Firmas como**: cada decisión queda registrada con él. La interfaz anterior de Tk sigue disponible con `uv run ergoai-tk`.
+
+#### Desarrollo de la interfaz
+
+```powershell
+uv run ergoai-gui --sin-navegador     # API en 127.0.0.1:8765
+cd web
+npm install
+npm run dev                           # Vite con proxy a /api
+npm run build                         # recompila src/ergoai/web/dist
+```
+
+La interfaz usa React 19, Tailwind CSS 4 y componentes de [Magic UI](https://github.com/magicuidesign/magicui) (contador, haces animados, rejilla, lista animada, botón con brillo) y [Cult UI](https://github.com/nolly-studio/cult-ui) (pestañas con dirección, formulario emergente, controles segmentados, interruptores y avisos), adaptados a la paleta del proyecto. Sus licencias MIT están en `web/LICENCIAS-TERCEROS.md`.
 
 ### Línea de comandos
 
@@ -97,9 +129,12 @@ La suite contiene pruebas de geometría, signos, relación de aspecto, selecció
 | Informe y recomendaciones | Implementada | Motor de reglas NOM-036-1 + Jabil con jerarquía de controles, fundamento y Δ REBA por recomendación; informe HTML y CSV 00014. |
 | Riesgo residual | Implementada | REBA recalculado con los efectos declarados de los controles no rechazados; las medidas administrativas no cuentan. |
 | Validación del especialista | Implementada | Aprobar/rechazar/editar/agregar con bitácora encadenada por hash; el informe se reabre ante cualquier cambio. |
-| Interfaz beta | Implementada | Aplicación de escritorio local con validación y bandeja por riesgo. Falta empaquetarla como ejecutable para distribución sin Python. |
+| Interfaz | Implementada | Interfaz web local (FastAPI + React) con evaluación, corrección de ángulos, validación, bitácora e informe. Tk queda como respaldo (`ergoai-tk`). |
 
 ## Alcance y limitaciones de la beta
+
+- **MediaPipe en Linux con PipeWire**: `import mediapipe` carga `sounddevice`, que vía PortAudio, ALSA y el JACK de PipeWire activa `module-rt`; ese módulo fija `RLIMIT_RTTIME` y el kernel termina el proceso con SIGKILL al crear el detector. ErgoAI no usa audio y bloquea ese import (`ergoai.pose.bloquear_audio_de_mediapipe`). Además, el detector corre en un proceso hijo (`ergoai.pose_aislada`): si se cierra, la API responde un error y sigue funcionando.
+- Algunas aplicaciones lanzan procesos con `RLIMIT_RTTIME=0` (por ejemplo, la terminal integrada de la app de escritorio de Claude) y ahí MediaPipe no puede ejecutarse; abre ErgoAI desde el lanzador o una terminal normal.
 
 - REBA es una ayuda de evaluación, no reemplaza al especialista ergonómico.
 - Si un landmark o contexto requerido no está disponible, el sistema deja el resultado como pendiente; no rellena valores “típicos”.
@@ -109,7 +144,8 @@ La suite contiene pruebas de geometría, signos, relación de aspecto, selecció
 ## Estructura relevante
 
 ```text
-src/ergoai/       # Lógica de pose, ángulos, REBA, complementos y GUI
+src/ergoai/       # Lógica de pose, ángulos, REBA, complementos, API local y GUI
+web/              # Código fuente de la interfaz web (React + Tailwind)
 config/           # Umbrales auditables
 scripts/          # Descarga de modelo, referencia manual y precisión
 tests/            # Pruebas deterministas sin fotografías confidenciales

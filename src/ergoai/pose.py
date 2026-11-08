@@ -1,5 +1,6 @@
 """Backend intercambiable de detección de pose basado en MediaPipe Tasks."""
 
+import sys
 from pathlib import Path
 from typing import Protocol
 
@@ -8,6 +9,20 @@ import numpy as np
 from .config import PoseConfig
 from .landmarks import NOMBRES_LANDMARKS
 from .modelos import Landmark, PoseResult, WorldLandmark
+
+
+def bloquear_audio_de_mediapipe() -> None:
+    """Evita que `import mediapipe` inicialice PortAudio a través de `sounddevice`.
+
+    MediaPipe importa `sounddevice` para sus tareas de audio, que ErgoAI no usa. En Linux con
+    PipeWire, PortAudio abre el complemento JACK de ALSA y `libpipewire-module-rt` fija
+    RLIMIT_RTTIME y crea un hilo de tiempo real; el kernel termina el proceso con SIGKILL
+    al crear el PoseLandmarker. Con el módulo marcado como ausente, MediaPipe captura el
+    ImportError y solo deshabilita la grabación de audio.
+    """
+
+    if "sounddevice" not in sys.modules:
+        sys.modules["sounddevice"] = None  # type: ignore[assignment]
 
 
 class PoseBackend(Protocol):
@@ -32,6 +47,7 @@ class MediaPipeBackend:
                 f"No existe el modelo MediaPipe: {self.ruta_modelo}. "
                 "Ejecute `python scripts/descargar_modelo.py`."
             )
+        bloquear_audio_de_mediapipe()
         try:
             import mediapipe as mp
             from mediapipe.tasks import python as mp_python
