@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,11 @@ from .config import Configuracion, cargar_configuracion
 from .io_imagenes import ImagenRGB, cargar_imagen
 from .modelos import Landmark, PoseResult, VistaPose, WorldLandmark
 from .pose import MediaPipeBackend, PoseBackend
+from .informe import generar_informe
 from .reba import calcular_reba
+from .recomendaciones import generar_recomendaciones, ordenar
+from .residual import calcular_residual, delta_individual
+from . import validacion as val
 
 VISTAS = ("frente", "costado", "aerea")
 EXTENSIONES_IMAGEN = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
@@ -203,8 +209,9 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
 
 
 def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None) -> Path:
-    """Ejecuta las fases de pose/ángulos y calcula el REBA trazable."""
+    """Ejecuta pose, ángulos, REBA, recomendaciones, riesgo residual e informe borrador."""
 
+    inicio = time.perf_counter()
     ruta_angulos = ejecutar_angulos(caso, raiz, backend)
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
     contexto = _cargar_contexto(caso)
@@ -228,9 +235,59 @@ def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None)
                 angulo["banda_reba"] = reba.grupo_b[lado][campo]
     salida["reba"] = reba.a_diccionario()
     salida["pendientes_manuales"].extend(reba.pendientes_manuales)
+    salida["contexto"] = contexto
+    salida["mediciones_reba"] = mediciones
+    salida["fecha_analisis"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    recomendaciones = generar_recomendaciones(mediciones, contexto, salida["reba"], configuracion.reba)
+    for recomendacion in recomendaciones:
+        recomendacion.delta_reba = delta_individual(mediciones, contexto, recomendacion.a_diccionario(), configuracion.reba)
+    salida["recomendaciones"] = [recomendacion.a_diccionario() for recomendacion in ordenar(recomendaciones)]
+    salida["riesgo_residual"] = calcular_residual(mediciones, contexto, salida["recomendaciones"], configuracion.reba)
+    salida["tiempos_s"] = {"analisis_total": round(time.perf_counter() - inicio, 2)}
     ruta_salida = ruta_angulos.parent / "resultado.json"
     ruta_salida.write_text(json.dumps(salida, ensure_ascii=False, indent=2), encoding="utf-8")
+    val.sincronizar(ruta_salida.parent, salida)
+    generar_informe(ruta_salida.parent, configuracion.reba)
     return ruta_salida
+
+
+def carpeta_resultado(ruta: Path, raiz: Path) -> Path:
+    """Acepta la carpeta de salida o la del caso de entrada y devuelve `out/<caso>`."""
+
+    if (ruta / "resultado.json").is_file():
+        return ruta
+    contexto = _cargar_contexto(ruta) if ruta.is_dir() else {}
+    candidata = raiz / "out" / str(contexto.get("caso_id", ruta.name))
+    if not (candidata / "resultado.json").is_file():
+        raise ValueError(f"No hay resultado.json para {ruta}; ejecuta primero `evaluar`.")
+    return candidata
+
+
+def ejecutar_validacion(carpeta: Path, raiz: Path, usuario: str, accion: str, rec_id: str | None = None,
+                        valores: dict[str, str] | None = None, comentario: str = "") -> Path:
+    """Aplica una decisión del especialista, la registra y regenera el informe."""
+
+    configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
+    resultado = json.loads((carpeta / "resultado.json").read_text(encoding="utf-8"))
+    validacion = val.cargar(carpeta) or val.sincronizar(carpeta, resultado)
+    if accion in ("aprobar", "rechazar", "reabrir"):
+        if not rec_id:
+            raise ValueError("Indica la recomendación con --rec.")
+        val.decidir(validacion, rec_id, usuario, accion, comentario)
+    elif accion == "editar":
+        if not rec_id:
+            raise ValueError("Indica la recomendación con --rec.")
+        val.editar(validacion, rec_id, usuario, valores or {}, comentario)
+    elif accion == "agregar":
+        datos = valores or {}
+        val.agregar(validacion, usuario, datos.get("problema", ""), datos.get("solucion", ""), datos.get("jerarquia", "rediseno"),
+                    datos.get("responsable", ""), datos.get("fecha_compromiso", ""))
+    elif accion == "aprobar_informe":
+        val.aprobar_informe(validacion, usuario, resultado.get("reba", {}).get("nivel_accion"), comentario)
+    else:
+        raise ValueError(f"Acción desconocida: {accion}")
+    val.guardar(carpeta, validacion)
+    return generar_informe(carpeta, configuracion.reba)
 
 
 def main() -> None:
@@ -244,6 +301,15 @@ def main() -> None:
     angulos.add_argument("caso", type=Path, help="carpeta de un caso con frente/costado/aerea")
     evaluar = subcomandos.add_parser("evaluar", help="calcula REBA y genera resultado.json")
     evaluar.add_argument("caso", type=Path, help="carpeta de un caso con frente/costado/aerea")
+    informe = subcomandos.add_parser("informe", help="regenera informe.html con el estado de validación vigente")
+    informe.add_argument("caso", type=Path, help="carpeta del caso o de out/<caso>")
+    validar = subcomandos.add_parser("validar", help="registra una decisión del especialista en la bitácora")
+    validar.add_argument("caso", type=Path, help="carpeta del caso o de out/<caso>")
+    validar.add_argument("accion", choices=("aprobar", "rechazar", "reabrir", "editar", "agregar", "aprobar_informe"))
+    validar.add_argument("--usuario", required=True, help="nombre del especialista")
+    validar.add_argument("--rec", help="ID de la recomendación, p. ej. R-TRONCO-ING")
+    validar.add_argument("--campo", action="append", default=[], metavar="CAMPO=VALOR", help="campo a editar/agregar (repetible)")
+    validar.add_argument("--comentario", default="")
     argumentos = parser.parse_args()
     if argumentos.comando == "pose":
         raiz = Path(__file__).resolve().parents[2]
@@ -257,6 +323,17 @@ def main() -> None:
         raiz = Path(__file__).resolve().parents[2]
         salida = ejecutar_evaluar(argumentos.caso.resolve(), raiz)
         print(f"Resultado REBA guardado en {salida}")
+        print(f"Informe borrador: {salida.parent / 'informe.html'}")
+    if argumentos.comando in ("informe", "validar"):
+        raiz = Path(__file__).resolve().parents[2]
+        carpeta = carpeta_resultado(argumentos.caso.resolve(), raiz)
+        if argumentos.comando == "informe":
+            configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
+            print(f"Informe: {generar_informe(carpeta, configuracion.reba)}")
+        else:
+            valores = dict(par.split("=", 1) for par in argumentos.campo)
+            ruta = ejecutar_validacion(carpeta, raiz, argumentos.usuario, argumentos.accion, argumentos.rec, valores, argumentos.comentario)
+            print(f"Cambio registrado. Informe: {ruta}")
 
 
 if __name__ == "__main__":
