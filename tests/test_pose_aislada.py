@@ -1,5 +1,4 @@
 import os
-import signal
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +15,7 @@ def _una_persona(configuracion, raiz, imagen):
 
 
 def _morir(configuracion, raiz, imagen):
-    os.kill(os.getpid(), signal.SIGKILL)
+    os._exit(9)
 
 
 def test_detector_aislado_devuelve_resultados_del_hijo(configuracion: Configuracion, tmp_path: Path) -> None:

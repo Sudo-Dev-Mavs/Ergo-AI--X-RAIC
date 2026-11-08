@@ -92,13 +92,15 @@ def test_el_analisis_usa_la_pose_previa_al_difuminado(entorno) -> None:
     datos = cliente.post("/api/casos", data={"contexto": json.dumps(contexto), "borrador": "b2", "toma": toma}).json()
     assert detector.llamadas == antes, "no debe volver a detectar sobre la imagen difuminada"
     pose = json.loads((raiz / "out" / "privado" / "pose.json").read_text(encoding="utf-8"))
-    assert pose["vistas"]["costado"]["fuente_pose"] == "captura antes de difuminar el rostro"
+    assert pose["vistas"]["costado"]["fuente_pose"] == "pose antes de difuminar el rostro"
     assert datos["resultado"]["reba"]["final"]["reportado"] is not None
 
-    # Una foto subida para esa vista invalida la pose guardada.
-    cliente.post("/api/casos", data={"contexto": json.dumps(contexto), "reemplazar": "true"},
-                 files={"costado": ("c.jpg", _jpg(_ruido(semilla=9)), "image/jpeg")})
-    assert not (raiz / "data" / "casos" / "privado" / "costado.pose.json").exists()
+    # Una foto subida también se protege y conserva su pose previa al difuminado.
+    subida = cliente.post("/api/casos", data={"contexto": json.dumps(contexto), "reemplazar": "true"},
+                          files={"costado": ("c.jpg", _jpg(_ruido(semilla=9)), "image/jpeg")}).json()
+    cache = raiz / "data" / "casos" / "privado" / "costado.pose.json"
+    assert cache.exists()
+    assert subida["resultado"]["vistas"]["costado"]["fuente_pose"] == "pose antes de difuminar el rostro"
     assert detector.llamadas == antes + 1
 
 

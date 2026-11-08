@@ -48,3 +48,25 @@ eaws:                                   # Excel Jabil 00014, hoja EAWS
 
 mano:
   modelo: models/hand_landmarker.task   # SUPUESTO: descargar y validar antes de adoptar
+
+recomendaciones:                         # Jabil 16-PE30-6500-00023 / formato 16-PE80-6500-00014
+  limite_carga_jabil_kg: 14              # Jabil §6.4.1
+  altura_precision_min_cm: 95            # Formato Jabil 00014, sección B
+  altura_precision_max_cm: 120           # Formato Jabil 00014, sección B
+  altura_ligero_min_cm: 85               # Formato Jabil 00014, sección B
+  altura_ligero_max_cm: 110              # Formato Jabil 00014, sección B
+  altura_pesado_min_cm: 65               # Formato Jabil 00014, sección B
+  altura_pesado_max_cm: 95               # Formato Jabil 00014, sección B
+  altura_rack_max_m: 1.7                 # Jabil §6.4.4
+  altura_carro_max_m: 1.6                # Jabil §6.4.4
+  espacio_libre_min_cm: 60               # Jabil §6.4.3
+  altura_conveyor_min_m: 0.5             # Jabil: conveyors
+  altura_conveyor_max_m: 1.4             # Jabil: conveyors
+  conveyor_gravedad_max_m: 3             # Jabil: conveyors
+  ayuda_visual_min_mm: 1400              # Formato Jabil 00014, sección F
+  ayuda_visual_max_mm: 1600              # Formato Jabil 00014, sección F
+  iluminacion_ensamble_lux: 500          # Formato Jabil 00014, sección G
+  iluminacion_precision_lux: 750         # Formato Jabil 00014, sección G
+  espacio_pies_min_cm: 15                # Formato Jabil 00014, sección B
+  reposapies_min_cm: 21                  # Jabil §7.2.2
+  reposapies_max_cm: 37                  # Jabil §7.2.2

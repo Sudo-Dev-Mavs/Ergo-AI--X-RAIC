@@ -176,6 +176,28 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         if (raiz / "out" / caso_id / "resultado.json").is_file() and not reemplazar:
             raise HTTPException(409, f"El caso «{caso_id}» ya existe. Usa otro identificador o confirma que quieres reemplazarlo.")
         with candado:
+            protegidas_subidas: dict[str, privacidad.ImagenProtegida] = {}
+            if fotos:
+                detector = detector_pose()
+                for vista, archivo in fotos.items():
+                    extension = Path(archivo.filename or "").suffix.lower()
+                    if extension not in (".jpg", ".jpeg", ".png"):
+                        raise HTTPException(400, f"La foto {vista} debe ser JPG o PNG.")
+                    contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
+                    if len(contenido) > MAX_FOTO_BYTES:
+                        raise HTTPException(400, f"La foto {vista} supera 25 MB.")
+                    try:
+                        protegidas_subidas[vista] = privacidad.proteger(
+                            contenido, detector.detect, getattr(detector, "detectar_rostros", None),
+                        )
+                    except (ValueError, OSError) as exc:
+                        raise HTTPException(400, f"La foto {vista} no es una imagen válida.") from exc
+                    except RuntimeError as exc:
+                        raise HTTPException(503, f"No se guardó la foto {vista} porque no se pudo proteger el rostro. {exc}") from exc
+                datos.setdefault("privacidad", {})["fotos_subidas"] = {
+                    vista: {"rostros": len(protegida.cajas), "metodo": protegida.metodo}
+                    for vista, protegida in protegidas_subidas.items()
+                }
             destino.mkdir(parents=True, exist_ok=True)
             anterior = destino / "contexto.json"
             if anterior.is_file() and "overrides" not in datos:
@@ -199,17 +221,11 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                     shutil.copy2(pose, destino / f"{vista}.pose.json")
                 else:
                     (destino / f"{vista}.pose.json").unlink(missing_ok=True)
-            for vista, archivo in fotos.items():
-                (destino / f"{vista}.pose.json").unlink(missing_ok=True)
-                extension = Path(archivo.filename or "").suffix.lower()
-                if extension not in (".jpg", ".jpeg", ".png"):
-                    raise HTTPException(400, f"La foto {vista} debe ser JPG o PNG.")
-                contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
-                if len(contenido) > MAX_FOTO_BYTES:
-                    raise HTTPException(400, f"La foto {vista} supera 25 MB.")
+            for vista, protegida in protegidas_subidas.items():
                 for ext in EXTENSIONES_IMAGEN:
                     (destino / f"{vista}{ext}").unlink(missing_ok=True)
-                (destino / f"{vista}{extension}").write_bytes(contenido)
+                (destino / f"{vista}.jpg").write_bytes(protegida.jpeg)
+                (destino / f"{vista}.pose.json").write_text(json.dumps(protegida.cache(), ensure_ascii=False), encoding="utf-8")
             anterior.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
             try:
                 ejecutar_evaluar(destino, raiz, backend)

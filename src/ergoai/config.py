@@ -129,6 +129,31 @@ class ManoConfig(ConfiguracionBase):
     modelo: str
 
 
+class RecomendacionesConfig(ConfiguracionBase):
+    """Valores dimensionales trazables usados por las recomendaciones."""
+
+    limite_carga_jabil_kg: float = Field(ge=0)
+    altura_precision_min_cm: float = Field(ge=0)
+    altura_precision_max_cm: float = Field(ge=0)
+    altura_ligero_min_cm: float = Field(ge=0)
+    altura_ligero_max_cm: float = Field(ge=0)
+    altura_pesado_min_cm: float = Field(ge=0)
+    altura_pesado_max_cm: float = Field(ge=0)
+    altura_rack_max_m: float = Field(ge=0)
+    altura_carro_max_m: float = Field(ge=0)
+    espacio_libre_min_cm: float = Field(ge=0)
+    altura_conveyor_min_m: float = Field(ge=0)
+    altura_conveyor_max_m: float = Field(ge=0)
+    conveyor_gravedad_max_m: float = Field(ge=0)
+    ayuda_visual_min_mm: float = Field(ge=0)
+    ayuda_visual_max_mm: float = Field(ge=0)
+    iluminacion_ensamble_lux: float = Field(ge=0)
+    iluminacion_precision_lux: float = Field(ge=0)
+    espacio_pies_min_cm: float = Field(ge=0)
+    reposapies_min_cm: float = Field(ge=0)
+    reposapies_max_cm: float = Field(ge=0)
+
+
 class Configuracion(ConfiguracionBase):
     """Configuración completa y validada del módulo."""
 
@@ -139,6 +164,7 @@ class Configuracion(ConfiguracionBase):
     rula: RulaConfig
     eaws: EawsConfig
     mano: ManoConfig
+    recomendaciones: RecomendacionesConfig
 
 
 def cargar_configuracion(ruta: str | Path) -> Configuracion:

@@ -145,7 +145,7 @@ def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None) ->
         vista = procesar_vista(nombre, imagen, _PosesFijas(cacheadas) if cacheadas is not None else detector, configuracion, indice)
         vistas[nombre] = vista.a_diccionario(configuracion.pose.vis_min)
         if cacheadas is not None:
-            vistas[nombre]["fuente_pose"] = "captura antes de difuminar el rostro"
+            vistas[nombre]["fuente_pose"] = "pose antes de difuminar el rostro"
         guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min)
         if not vista.detectado:
             advertencias.append(f"vista {nombre}: {vista.motivo}")
@@ -270,7 +270,7 @@ def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None)
     salida["contexto"] = contexto
     salida["mediciones_reba"] = mediciones
     salida["fecha_analisis"] = datetime.now().astimezone().isoformat(timespec="seconds")
-    recomendaciones = generar_recomendaciones(mediciones, contexto, salida["reba"], configuracion.reba)
+    recomendaciones = generar_recomendaciones(mediciones, contexto, salida["reba"], configuracion.reba, configuracion.recomendaciones)
     for recomendacion in recomendaciones:
         recomendacion.delta_reba = delta_individual(mediciones, contexto, recomendacion.a_diccionario(), configuracion.reba)
     salida["recomendaciones"] = [recomendacion.a_diccionario() for recomendacion in ordenar(recomendaciones)]

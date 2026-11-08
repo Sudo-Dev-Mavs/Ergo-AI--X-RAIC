@@ -29,7 +29,7 @@ CONTEXTO = {
 
 def _recs(configuracion):
     reba = calcular_reba(MEDICIONES, CONTEXTO, configuracion.reba).a_diccionario()
-    return reba, [rec.a_diccionario() for rec in generar_recomendaciones(MEDICIONES, CONTEXTO, reba, configuracion.reba)]
+    return reba, [rec.a_diccionario() for rec in generar_recomendaciones(MEDICIONES, CONTEXTO, reba, configuracion.reba, configuracion.recomendaciones)]
 
 
 def test_recomendaciones_priorizan_ingenieria_y_citan_norma(configuracion) -> None:

@@ -49,6 +49,8 @@ def test_crear_listar_y_servir_archivos(cliente: TestClient) -> None:
     assert cliente.get("/api/casos/caso01/archivos/informe.html").status_code == 200
     assert cliente.get("/api/casos/caso01/archivos/costado_angulos.png").headers["content-type"] == "image/png"
     assert cliente.get("/api/casos/caso01/fotos/costado").status_code == 200
+    assert cliente.get("/api/casos/caso01/fotos/costado").headers["content-type"] == "image/jpeg"
+    assert datos["resultado"]["contexto"]["privacidad"]["fotos_subidas"]["costado"]["metodo"] == "pose"
     assert cliente.get("/api/casos/caso01/archivos/resultado.json").status_code == 404
     assert cliente.get("/api/casos/caso01/archivos/..%2F..%2Fconfig%2Fumbrales.yaml").status_code == 404
 
