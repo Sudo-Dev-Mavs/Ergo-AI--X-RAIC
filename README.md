@@ -33,6 +33,8 @@ uv run python scripts/descargar_modelo.py   # pose y detector de rostros
 
 ### Ejecutable de escritorio (para usar ErgoAI sin instalar nada)
 
+**Beta Windows 0.2.0b1:** el paquete se genera en Windows y contiene el servidor local, la interfaz web, MediaPipe y los modelos requeridos. En GitHub Actions, ejecuta el flujo **Ejecutable** para obtener el artefacto `ErgoAI-Windows`; descomprímelo y abre `ErgoAI.exe`.
+
 Descomprime `ErgoAI-<sistema>.zip` / `.tar.gz` y abre **ErgoAI** (`ErgoAI.exe` en Windows). La app abre su propia ventana (Edge, Chrome, Chromium o Brave en modo aplicación) y al cerrarla se detiene. En Linux, `./instalar-acceso-directo.sh` la agrega al lanzador de aplicaciones.
 
 - Los casos, resultados, informes y la bitácora se guardan en `~/ErgoAI` (en Windows, `C:\Users\<usuario>\ErgoAI`). Usa `--datos <carpeta>` o la variable `ERGOAI_DATOS` para cambiarla.
@@ -64,7 +66,7 @@ Abre `http://127.0.0.1:8765/` en el navegador. El servidor escucha solo en este 
 
    Las tomas se guardan solo en este equipo, en `capturas/<borrador>/` dentro de la carpeta de datos, con un máximo de 120 por evaluación; se borran a las 24 h o con **Descartar tomas**. Al analizar, la toma elegida se copia al caso y queda registrada en su contexto.
 
-   **Privacidad de las tomas**: antes de guardar, ErgoAI detecta la pose en la imagen original, ubica la cabeza (nariz, ojos, orejas y boca, con margen) y la difumina con mosaico y desenfoque; si no hay pose, usa el detector de rostros de MediaPipe (BlazeFace). En disco solo queda la imagen difuminada. La pose medida antes de difuminar se guarda en `<vista>.pose.json`, ligada a la imagen por SHA-256, y el análisis la reutiliza para no perder precisión en el cuello. Si el detector no está disponible, la toma no se guarda. La vista previa en vivo no se almacena. Las fotos subidas como archivo no se modifican: deben venir ya sin rostros.
+   **Privacidad de tomas y archivos**: antes de guardar una imagen, ErgoAI detecta la pose original, ubica la cabeza (nariz, ojos, orejas y boca, con margen) y la difumina con mosaico y desenfoque; si no hay pose, usa el detector de rostros de MediaPipe (BlazeFace). Esto aplica tanto a cámara como a fotografías subidas. En disco solo queda la imagen protegida. La pose medida antes de difuminar se guarda en `<vista>.pose.json`, ligada a la imagen por SHA-256, y el análisis la reutiliza para no perder precisión en el cuello. Si el detector no está disponible, la imagen no se guarda. La vista previa en vivo no se almacena.
 3. **Caso**: goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), más cuatro pestañas:
    - **Recomendaciones**: aprueba, edita, rechaza con motivo o agrega controles; **Aprobar informe** se habilita cuando no quedan pendientes. Las propuestas se dibujan punteadas y las aprobadas con trazo sólido.
    - **Postura medida**: ángulos por segmento con su banda REBA; el especialista puede corregir un ángulo y ErgoAI recalcula y lo registra.
