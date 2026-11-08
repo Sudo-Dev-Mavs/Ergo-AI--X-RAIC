@@ -267,7 +267,7 @@ export function NuevaPage() {
             {paso === 0 && (
               <div className="space-y-6">
                 <EstadoCamaras {...camaras} />
-                <div className="grid gap-6 md:grid-cols-3 md:gap-4">
+                <div className="grid gap-6 md:grid-cols-3 md:grid-rows-[auto_auto_auto_auto] md:gap-x-4 md:gap-y-2">
                   {VISTAS.map(({ vista, titulo, ayuda }) => (
                     <VistaFuente key={vista} vista={vista} titulo={titulo} ayuda={ayuda} principal={vista === "costado"}
                       fuente={fuentes[vista]} onFuente={(f) => setFuentes((prev) => ({ ...prev, [vista]: f }))}

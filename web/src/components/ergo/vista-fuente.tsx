@@ -25,9 +25,12 @@ export function VistaFuente({ vista, titulo, ayuda, principal, fuente, onFuente,
   const idSelect = useId()
   const camaraConectada = fuente.modo === "camara" && fuente.deviceId && camaras.some((c) => c.deviceId === fuente.deviceId)
 
+  // Cuatro filas fijas (encabezado, selector de cámara, recuadro, ayuda). En escritorio las tres vistas
+  // comparten esas filas con CSS subgrid, así los recuadros quedan al mismo nivel aunque un encabezado
+  // ocupe dos líneas o solo una vista use cámara.
   return (
-    <div className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+    <div className="flex min-w-0 flex-col gap-2 md:row-span-4 md:grid md:grid-rows-subgrid">
+      <div className="flex flex-col items-start gap-1.5">
         <p className="text-[16px] font-semibold">{titulo}{principal && <span className="ml-1.5 text-[13px] font-normal text-graphite">principal</span>}</p>
         <HaloSegmented translucent={false} className="overflow-x-auto" value={fuente.modo}
           onValueChange={(modo) => onFuente(modo === "camara" ? { modo: "camara", deviceId: fuente.modo === "camara" ? fuente.deviceId : camaras[0]?.deviceId ?? null } : { modo: "archivo" })}
@@ -35,26 +38,34 @@ export function VistaFuente({ vista, titulo, ayuda, principal, fuente, onFuente,
             { value: "camara", label: <span className="flex items-center gap-1.5"><Camera className="size-3.5" />Cámara</span> }]} />
       </div>
 
+      <div className={cn("min-w-0", fuente.modo === "archivo" && "hidden md:block")}>
+        {fuente.modo === "camara" && (
+          <>
+            <label htmlFor={idSelect} className="sr-only">Cámara para la vista {titulo}</label>
+            <select id={idSelect} className="campo py-1.5 text-[14px]" value={fuente.deviceId ?? ""}
+              onChange={(e) => onFuente({ modo: "camara", deviceId: e.target.value || null })}>
+              <option value="">{camaras.length ? "Elige una cámara" : "Sin cámaras detectadas"}</option>
+              {camaras.map((c) => <option key={c.deviceId} value={c.deviceId}>{c.nombre}</option>)}
+              {fuente.deviceId && !camaraConectada && <option value={fuente.deviceId}>Cámara guardada, no conectada</option>}
+            </select>
+          </>
+        )}
+      </div>
+
       {fuente.modo === "archivo" ? (
         <RanuraArchivo titulo={titulo} archivo={archivo} onArchivo={onArchivo} />
       ) : (
-        <>
-          <label htmlFor={idSelect} className="sr-only">Cámara para la vista {titulo}</label>
-          <select id={idSelect} className="campo mb-2 py-1.5 text-[14px]" value={fuente.deviceId ?? ""}
-            onChange={(e) => onFuente({ modo: "camara", deviceId: e.target.value || null })}>
-            <option value="">{camaras.length ? "Elige una cámara" : "Sin cámaras detectadas"}</option>
-            {camaras.map((c) => <option key={c.deviceId} value={c.deviceId}>{c.nombre}</option>)}
-            {fuente.deviceId && !camaraConectada && <option value={fuente.deviceId}>Cámara guardada, no conectada</option>}
-          </select>
-          <Marco>
-            {camaraConectada && fuente.deviceId
-              ? <EnVivo key={fuente.deviceId} deviceId={fuente.deviceId} abrir={abrir} vista={vista} />
-              : <Vacio icono={<VideoOff className="size-6 text-graphite" strokeWidth={1.5} />} texto={camaras.length ? "Elige qué cámara cubre esta vista" : "Detecta las cámaras arriba"} />}
-          </Marco>
-        </>
+        <Marco>
+          {camaraConectada && fuente.deviceId
+            ? <EnVivo key={fuente.deviceId} deviceId={fuente.deviceId} abrir={abrir} vista={vista} />
+            : <Vacio icono={<VideoOff className="size-6 text-graphite" strokeWidth={1.5} />} texto={camaras.length ? "Elige qué cámara cubre esta vista" : "Detecta las cámaras arriba"} />}
+        </Marco>
       )}
-      {fuente.modo === "camara" && capturaElegida && <p className="mt-2 text-[13px] font-medium">Se analizará la toma de las {capturaElegida}</p>}
-      <p className={cn("text-[13px] leading-snug text-graphite", fuente.modo === "camara" && capturaElegida ? "mt-0.5" : "mt-2")}>{ayuda}</p>
+
+      <div>
+        {fuente.modo === "camara" && capturaElegida && <p className="text-[13px] font-medium">Se analizará la toma de las {capturaElegida}</p>}
+        <p className="text-[13px] leading-snug text-graphite">{ayuda}</p>
+      </div>
     </div>
   )
 }
