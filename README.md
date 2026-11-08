@@ -55,7 +55,7 @@ uv run python scripts/construir_ejecutable.py --web    # además recompila la in
 ### Interfaz web local (recomendada)
 
 ```powershell
-uv run ergoai-gui
+uv run python scripts/iniciar_ergoai.py
 ```
 
 Abre `http://127.0.0.1:8765/` en el navegador. El servidor escucha solo en este equipo; las fotos y resultados no salen de él. La interfaz ya viene compilada en `src/ergoai/web/dist`, así que no hace falta Node para usarla.
@@ -80,7 +80,7 @@ Escribe tu nombre en **Firmas como**: cada decisión queda registrada con él. L
 #### Desarrollo de la interfaz
 
 ```powershell
-uv run ergoai-gui --sin-navegador     # API en 127.0.0.1:8765
+uv run python scripts/iniciar_ergoai.py --sin-navegador  # API en 127.0.0.1:8765
 cd web
 npm install
 npm run dev                           # Vite con proxy a /api
