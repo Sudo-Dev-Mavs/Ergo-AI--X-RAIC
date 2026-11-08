@@ -54,7 +54,8 @@ export interface Angulo {
   lado: "L" | "R" | null
   valor_deg: number | null
   valor_medido_deg?: number | null
-  vista: Vista
+  vista: Vista | "contexto"
+  metodo?: string
   banderas: string[]
   motivo: string | null
   banda_reba?: number | null

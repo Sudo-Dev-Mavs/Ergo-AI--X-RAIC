@@ -16,7 +16,8 @@ from .modelos import Landmark, PoseResult, VistaPose, WorldLandmark
 from .pose import MediaPipeBackend, PoseBackend
 from .privacidad import personas_desde_dict
 from .informe import generar_informe
-from .reba import calcular_reba
+from .reba import banda_medida, calcular_reba
+from .respaldos import completar_con_respaldos
 from .recomendaciones import generar_recomendaciones, ordenar
 from .residual import calcular_residual, delta_individual
 from . import validacion as val
@@ -120,7 +121,7 @@ def _pose_cacheada(caso: Path, nombre: str, ruta_imagen: Path, imagen: ImagenRGB
         return None
 
 
-def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None) -> Path:
+def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None) -> Path:
     """Procesa todas las vistas disponibles y escribe `out/<caso>/pose.json`."""
 
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
@@ -129,7 +130,7 @@ def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None) ->
     if not isinstance(indices, dict):
         raise ValueError("contexto.json: persona_indice debe ser un objeto por vista.")
     detector = backend or MediaPipeBackend(configuracion.pose, raiz)
-    destino = raiz / "out" / str(contexto.get("caso_id", caso.name))
+    destino = (carpeta_salida or raiz / "out") / str(contexto.get("caso_id", caso.name))
     destino.mkdir(parents=True, exist_ok=True)
     vistas: dict[str, dict[str, Any]] = {}
     advertencias: list[str] = []
@@ -176,22 +177,10 @@ def _vista_desde_diccionario(datos: dict[str, Any]) -> VistaPose:
     return VistaPose(**argumentos)
 
 
-def _etiquetas(medidas: list[MedicionAngulo]) -> list[str]:
-    """Crea etiquetas compactas para la imagen anotada de una vista."""
-
-    resultado: list[str] = []
-    for medida in medidas:
-        lado = f" {medida.lado}" if medida.lado else ""
-        valor = "?" if medida.valor_deg is None else f"{medida.valor_deg:.1f}°"
-        banderas = " ?" if medida.banderas else ""
-        resultado.append(f"{medida.medida}{lado}: {valor}{banderas}")
-    return resultado
-
-
-def ejecutar_angulos(caso: Path, raiz: Path, backend: PoseBackend | None = None) -> Path:
+def ejecutar_angulos(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None) -> Path:
     """Genera vectores, ángulos y anotaciones de la Fase 2 para un caso."""
 
-    ruta_pose = ejecutar_pose(caso, raiz, backend)
+    ruta_pose = ejecutar_pose(caso, raiz, backend, carpeta_salida)
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
     contexto = _cargar_contexto(caso)
     pose = json.loads(ruta_pose.read_text(encoding="utf-8"))
@@ -199,19 +188,26 @@ def ejecutar_angulos(caso: Path, raiz: Path, backend: PoseBackend | None = None)
     vectores_salida: dict[str, Any] = {}
     angulos: list[MedicionAngulo] = []
     pendientes: list[dict[str, str | None]] = []
+    vistas_pose: dict[str, VistaPose] = {}
     for nombre, datos in pose["vistas"].items():
         vista = _vista_desde_diccionario(datos)
+        vistas_pose[nombre] = vista
         vectores, medidas, metadatos = medir_vista(vista, configuracion, contexto)
         datos.update(metadatos)
         vectores_salida[nombre] = {clave: vector.a_diccionario() for clave, vector in vectores.items()}
         angulos.extend(medidas)
-        for medida in medidas:
-            if medida.valor_deg is None:
-                pendientes.append({"medida": medida.medida, "lado": medida.lado, "motivo": medida.motivo})
+    # Lo que la vista primaria no pudo medir se intenta con la vista de respaldo y con la pose 3D.
+    angulos = completar_con_respaldos(angulos, vistas_pose, contexto, configuracion)
+    for medida in angulos:
+        if medida.valor_deg is None:
+            pendientes.append({"medida": medida.medida, "lado": medida.lado, "motivo": medida.motivo})
+    for nombre, vista in vistas_pose.items():
         ruta_imagen = _ruta_vista(caso, nombre)
         if ruta_imagen is not None:
             imagen = cargar_imagen(ruta_imagen)
-            guardar_angulos(destino / f"{nombre}_angulos.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min, _etiquetas(medidas))
+            de_vista = [m for m in angulos if m.vista == nombre]
+            bandas = [banda_medida(m.medida, m.valor_deg, configuracion.reba) for m in de_vista]
+            guardar_angulos(destino / f"{nombre}_angulos.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min, de_vista, bandas)
     salida = {
         "caso_id": pose["caso_id"], "version_modelo": pose["version_modelo"],
         "vistas": pose["vistas"], "vectores": vectores_salida,
@@ -240,11 +236,11 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
     return mediciones
 
 
-def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None) -> Path:
+def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None) -> Path:
     """Ejecuta pose, ángulos, REBA, recomendaciones, riesgo residual e informe borrador."""
 
     inicio = time.perf_counter()
-    ruta_angulos = ejecutar_angulos(caso, raiz, backend)
+    ruta_angulos = ejecutar_angulos(caso, raiz, backend, carpeta_salida)
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
     contexto = _cargar_contexto(caso)
     salida = json.loads(ruta_angulos.read_text(encoding="utf-8"))

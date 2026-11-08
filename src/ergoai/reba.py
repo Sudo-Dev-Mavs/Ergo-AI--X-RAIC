@@ -140,6 +140,37 @@ def banda_muneca(valor: float, desviada: bool, config: RebaConfig) -> int:
     return min(3, puntaje + int(desviada))
 
 
+def banda_medida(medida: str, valor: float | None, config: RebaConfig) -> int | None:
+    """Puntaje REBA que aporta un ángulo por sí solo (sin ajustes de otros segmentos).
+
+    Se usa para colorear las anotaciones: 1 verde, 2 amarillo, 3 naranja, 4 o más rojo. Los ajustes
+    (torsión, inclinación lateral, abducción, giro de cuello, apoyo) valen 1 si no aplican y 2 si suman.
+    """
+
+    if valor is None:
+        return None
+    if medida == "tronco_flexion":
+        return banda_tronco(valor, None, None, config)
+    if medida == "cuello_flexion":
+        return banda_cuello(valor, None, config)
+    if medida == "brazo_flexion":
+        return banda_brazo(valor, None, False, False, config)
+    if medida == "codo_flexion":
+        return banda_antebrazo(valor, config)
+    if medida == "muneca_flexion_extension":
+        return banda_muneca(valor, False, config)
+    if medida == "rodilla_flexion":
+        return 1 + (2 if valor > config.rodilla.alta else 1 if valor >= config.rodilla.leve else 0)
+    umbrales = {
+        "tronco_torsion": config.umbral_torsion_tronco_deg, "tronco_inclinacion_lateral": config.umbral_inclinacion_lateral_tronco_deg,
+        "brazo_abduccion": config.umbral_abduccion_brazo_deg, "cuello_inclinacion_rotacion": config.umbral_cuello_lateral_rotacion_deg,
+        "apoyo_piernas_unilateral": 0.5,
+    }
+    if medida in umbrales:
+        return 2 if valor > umbrales[medida] else 1
+    return None
+
+
 def puntaje_tabla_a(tronco: int, cuello: int, piernas: int) -> int:
     """Consulta la Tabla A REBA, validando cada rango."""
 

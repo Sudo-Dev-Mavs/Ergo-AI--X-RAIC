@@ -164,14 +164,15 @@ uv run ergoai informe out/caso01           # regenera informe.html y el CSV
 
 ### Medir la precisión
 
-Con referencias manuales en `data/validacion/<caso>/`:
+El procedimiento completo (armado del conjunto, referencia a ciegas, interpretación) está en [`docs/PROTOCOLO_VALIDACION.md`](docs/PROTOCOLO_VALIDACION.md). Cada caso de validación va en `data/validacion/<caso>/` con sus fotos, `contexto.json` y un `referencia.json` que tiene el REBA de Jabil y/o los ángulos de referencia.
 
 ```powershell
-uv run python scripts/anotar_manual.py data/validacion/caso01/costado.jpg --vista costado
-uv run python scripts/evaluar_precision.py --validacion data/validacion --out out --csv out/precision.csv
+uv run python scripts/evaluar_precision.py --plantilla data/validacion/caso01   # referencia.json para completar
+uv run python scripts/evaluar_precision.py                                      # evalúa y escribe out/precision/
+uv run python scripts/anotar_manual.py data/validacion/caso01/costado.jpg --vista costado   # opcional: landmarks a mano
 ```
 
-`anotar_manual.py` abre la imagen para marcar los landmarks con clics (Enter termina, R deshace). `evaluar_precision.py` compara contra los `resultado.json` y reporta el error por ángulo y si cae en la misma banda REBA, que es el criterio 2 de la rúbrica.
+`out/precision/reporte.html` muestra el **criterio 1** (casos en que el REBA y el nivel coinciden con Jabil) y el **criterio 2** (porcentaje de segmentos en la misma banda REBA; los no estimados cuentan como fallo), con el nivel de la rúbrica que corresponde, el error por segmento y por vista y la lista de fallos con sus banderas. Los casos de validación se evalúan en `out/precision/`, separados de los de la interfaz.
 
 ## Dónde se guardan los datos
 
@@ -185,6 +186,7 @@ Con el ejecutable, la carpeta de datos es `~/ErgoAI` (`C:\Users\<usuario>\ErgoAI
 | `out/<caso>/informe.html` | Informe del estudio (BORRADOR o APROBADO). |
 | `out/<caso>/acciones_00014.csv` | Acciones con las columnas de «OBSERVACIONES Y MEJORAS». |
 | `out/<caso>/*_pose.png`, `*_angulos.png` | Esqueleto y ángulos anotados por vista. |
+| `out/precision/` | Reporte de precisión (`reporte.html`, `precision.csv`, `resumen.json`) y resultados de los casos de validación. |
 | `capturas/<borrador>/<toma>/` | Tomas temporales de cámara, ya difuminadas: máximo 120 por evaluación, se borran a las 24 h o con **Descartar tomas**. |
 | `config/umbrales.yaml` | Umbrales; se copia la primera vez y no se sobrescribe al actualizar. |
 | `models/` | Modelos de MediaPipe. |
@@ -212,7 +214,20 @@ Para borrar un caso, elimina `data/casos/<caso>/` y `out/<caso>/`.
 - **Costado**: flexión de tronco y de cuello, flexión de brazo, ángulo de codo, flexión de muñeca y de rodilla, por lado.
 - **Frente**: inclinación lateral del tronco, abducción de brazos, giro o inclinación del cuello y apoyo en una pierna.
 - **Aérea**: torsión del tronco, como ángulo entre la línea de hombros y la de caderas.
-- Banderas: `baja_visibilidad`, `cerca_de_umbral` (a ±5° de un límite REBA), `posible_escorzo` y `baja_confianza_metodo`.
+- **Respaldo entre vistas** (`respaldos.py`, tabla §7.3 de la especificación). Cuando la vista primaria no puede sostener una medida porque falta la vista o los landmarks no se ven:
+  - codo y rodilla se miden en la vista de frente;
+  - el apoyo de piernas sale de los tobillos en la vista de costado o de la postura declarada «sentado»;
+  - el resto usa la pose 3D de MediaPipe (de costado o de frente), con planos definidos por el propio cuerpo: el sagital es perpendicular a la línea de caderas y el frontal contiene esa línea y la vertical. La abducción usa 3D y no la vista aérea, que no la mide bien.
+
+  Estas medidas llevan la bandera `vista_respaldo`, y si solo se conoce la magnitud (flexión o extensión indistinta), también `baja_confianza_metodo`. La interfaz indica de dónde salió cada medida. Lo que no se puede medir de ninguna forma queda pendiente.
+- Banderas: `baja_visibilidad`, `cerca_de_umbral` (a ±5° de un límite REBA), `posible_escorzo`, `vista_respaldo` y `baja_confianza_metodo`.
+- **Imágenes anotadas** (`<vista>_angulos.png`, §7.5):
+  - el esqueleto sin cara;
+  - flechas de los vectores medidos;
+  - el valor de cada ángulo junto a su articulación, en una etiqueta con el color de su banda REBA (1 verde, 2 amarillo, 3 naranja, 4 o más rojo);
+  - «?» cuando la medida tiene banderas, y una leyenda.
+
+  Las medidas que vienen de la pose 3D se rotulan sin flecha.
 
 ### REBA
 
@@ -267,7 +282,9 @@ Cualquier cambio posterior regresa el informe a BORRADOR y queda en la bitácora
 | Módulo (`src/ergoai/`) | Responsabilidad |
 |---|---|
 | `io_imagenes.py`, `pose.py`, `pose_aislada.py` | Carga con corrección EXIF; MediaPipe en un proceso hijo para que un cierre nativo no tumbe el servidor. |
-| `angulos.py`, `geometria.py`, `landmarks.py`, `anotacion.py` | Vectores, ángulos, banderas e imágenes anotadas. |
+| `angulos.py`, `geometria.py`, `landmarks.py` | Vectores, ángulos y banderas por vista. |
+| `respaldos.py` | Respaldo entre vistas y 3D para medidas que la vista primaria no sostiene. |
+| `anotacion.py` | Imágenes anotadas con flechas, valores junto a cada articulación y color por banda REBA. |
 | `reba.py`, `config.py` | Bandas y tablas REBA; configuración validada con Pydantic. |
 | `recomendaciones.py`, `residual.py` | Motor de reglas y recálculo del riesgo residual. |
 | `validacion.py`, `informe.py` | Decisiones del especialista, bitácora encadenada, informe HTML y CSV. |
@@ -275,6 +292,7 @@ Cualquier cambio posterior regresa el informe a BORRADOR y queda en la bitácora
 | `cli.py` | Pipeline completo y comandos `pose`, `angulos`, `evaluar`, `validar` e `informe`. |
 | `servidor.py` | API FastAPI local y servidor de la interfaz compilada. |
 | `escritorio.py` | Lanzador del ejecutable: carpeta de datos, servidor y ventana de aplicación. |
+| `precision.py`, `reporte_precision.py` | Comparación con referencias y reporte de precisión (criterios 1 y 2). |
 | `rula.py`, `eaws.py`, `nom036.py`, `muneca.py` | Complementos aislados. |
 | `gui.py` | Interfaz Tk de respaldo. |
 
@@ -311,9 +329,11 @@ La interfaz (`web/`) usa React 19, TypeScript, Tailwind CSS 4 y `motion`, con co
 uv run pytest
 ```
 
-Son 48 pruebas deterministas, sin fotografías confidenciales; usan detectores sintéticos. Cubren:
+Son 57 pruebas deterministas, sin fotografías confidenciales; usan detectores sintéticos. **No sustituyen** la medición de precisión con fotos reales ([protocolo](docs/PROTOCOLO_VALIDACION.md)). Cubren:
 
 - geometría, ángulos y bandas REBA;
+- el respaldo 3D, verificado con poses 3D construidas con ángulos conocidos, el respaldo de frente y las imágenes anotadas;
+- el reporte de precisión (criterios 1 y 2 y medidas sin estimar);
 - el pipeline completo, las recomendaciones y el riesgo residual;
 - la bitácora (incluida la detección de alteraciones) y las condiciones para aprobar;
 - la API (rutas, validaciones y *path traversal*);
@@ -370,14 +390,14 @@ npm run build                       # recompila src/ergoai/web/dist (se versiona
 
 | Área | Estado | Nota |
 |---|---|---|
-| Imagen, pose y ángulos | Implementado | Medición 2D por vista con banderas. Faltan respaldos entre vistas o en 3D cuando una vista no se ve bien. |
+| Imagen, pose y ángulos | Implementado | Medición 2D por vista con respaldo entre vistas y 3D, banderas e imágenes anotadas por banda REBA. Las medidas 3D de flexión dan solo la magnitud. |
 | REBA | Implementado | Ambos lados, contexto, correcciones del especialista y pendientes explícitos. |
 | Recomendaciones y riesgo residual | Implementado | Reglas NOM-036-1 + Jabil con jerarquía; el efecto de cada control es una estimación. |
 | Validación, bitácora e informe | Implementado | Informe HTML/PDF y CSV 00014. |
 | Interfaz web y ejecutable | Implementado | Ejecutable de Linux probado; el de Windows se construye con el workflow y aún no se ha probado. |
 | Cámaras y difuminado de rostros | Implementado | Probado con cámaras simuladas de Chromium y un retrato real; falta probar con las cámaras de la estación. |
-| Precisión (criterios 1 y 2 de la rúbrica) | Pendiente | Herramientas listas; falta medir contra las referencias de Jabil y demostrar al menos 90 % de ángulos en la misma banda REBA. |
-| Complementos (RULA, EAWS, muñeca) | Parcial | Módulos aislados, sin integrar a la interfaz. |
+| Precisión (criterios 1 y 2 de la rúbrica) | Pendiente de datos | El protocolo, las plantillas de referencia y el reporte están listos. Falta correrlo con fotos y referencias de Jabil y demostrar 6/6 en REBA y al menos 90 % de segmentos en la misma banda. |
+| Complementos (RULA, EAWS, NOM-036, muñeca) | Siguiente versión | Módulos aislados, sin integrar a la interfaz; falta validar HandLandmarker para la muñeca. |
 
 - ErgoAI es una ayuda para el especialista; no lo sustituye.
 - Si un landmark o dato no está disponible, el resultado queda pendiente.
@@ -392,6 +412,7 @@ web/               Código fuente de la interfaz (React + Tailwind)
 config/            Umbrales auditables
 scripts/           Modelos, precisión y construcción del ejecutable
 empaquetado/       Spec de PyInstaller, lanzador e ícono
+docs/              Protocolo de validación de precisión
 tests/             Pruebas deterministas
 .github/workflows/ Construcción del ejecutable en GitHub Actions
 ESPECIFICACION_POSE.md  Especificación original del módulo de pose y REBA
