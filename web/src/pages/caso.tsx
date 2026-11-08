@@ -59,7 +59,7 @@ export function CasoPage({ id }: { id: string }) {
   if (error) {
     return (
       <div className="mx-auto max-w-[1180px]">
-        <a href="#/" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink"><ArrowLeft className="size-4" /> Casos</a>
+        <a href="#/" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink"><ArrowLeft className="size-4" /> Inicio</a>
         <h1 className="t-display mt-6 text-[40px]">No se pudo abrir «{id}»</h1>
         <p className="mt-3 text-[16px] text-ink-soft">{error}</p>
       </div>
@@ -82,7 +82,7 @@ export function CasoPage({ id }: { id: string }) {
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <a href="#/" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink"><ArrowLeft className="size-4" /> Casos</a>
+      <a href="#/" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink"><ArrowLeft className="size-4" /> Inicio</a>
       <header className="mt-4 flex flex-wrap items-end justify-between gap-6 border-b border-ink pb-6">
         <div className="min-w-0">
           <h1 className="t-display break-words text-[40px] sm:text-[56px]">{resultado.caso_id}</h1>

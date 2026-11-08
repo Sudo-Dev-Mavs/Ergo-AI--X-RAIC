@@ -1,4 +1,4 @@
-import { FilePlus2, LayoutList, PenLine } from "lucide-react"
+import { FilePlus2, House, PenLine } from "lucide-react"
 
 import { PolishedToaster } from "@/components/cult/halo-toast"
 import { Goniometro } from "@/components/ergo/goniometro"
@@ -34,12 +34,12 @@ function Marco() {
 function Riel({ actual }: { actual: string }) {
   const { nombre, setNombre } = useEspecialista()
   const enlaces = [
-    { ruta: "casos" as const, texto: "Casos", icono: LayoutList, activo: actual === "casos" || actual === "caso" },
+    { ruta: "casos" as const, texto: "Inicio", icono: House, activo: actual === "casos" || actual === "caso" },
     { ruta: "nueva" as const, texto: "Nueva evaluación", icono: FilePlus2, activo: actual === "nueva" },
   ]
   return (
     <aside className="sticky top-0 z-30 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule bg-vellum/90 px-4 py-3 backdrop-blur lg:h-dvh lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-8 lg:border-r lg:border-b-0 lg:px-5 lg:py-8">
-      <a href="#/" className="flex items-center gap-2.5" aria-label="ErgoAI, ir a casos">
+      <a href="#/" className="flex items-center gap-2.5" aria-label="ErgoAI, ir al inicio">
         <Goniometro inicial={11} residual={null} nivel="Muy alto" nivelResidual={null} tamano={38} compacto className="-mb-2" />
         <span className="t-display text-[22px]">ErgoAI</span>
       </a>

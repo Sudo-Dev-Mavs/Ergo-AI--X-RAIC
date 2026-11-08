@@ -56,7 +56,7 @@ uv run ergoai-gui
 
 Abre `http://127.0.0.1:8765/` en el navegador. El servidor escucha solo en este equipo; las fotos y resultados no salen de él. La interfaz ya viene compilada en `src/ergoai/web/dist`, así que no hace falta Node para usarla.
 
-1. **Casos**: lista ordenada por riesgo, con los casos alto/muy alto sin validar primero. Cada fila muestra el REBA inicial y el residual esperado sobre la escala 1–15.
+1. **Inicio** (*Evaluación ergonómica*): a la izquierda, cómo empezar y el acceso a **Nueva evaluación**; al costado, el panel **Casos evaluados**, ordenado por riesgo con los casos alto/muy alto sin validar primero. Cada caso muestra su REBA, el residual esperado sobre la escala 1–15, cuántas propuestas faltan por validar y si el informe está aprobado.
 2. **Nueva evaluación**, en tres pasos entre los que puedes ir y volver antes de analizar:
    1. **Fotografías**: para cada vista (costado, frente, aérea) elige *Archivo* o *Cámara*. Con **Detectar cámaras** aparecen las cámaras conectadas con su nombre; asigna una a cada vista y define **Capturar cada N** segundos o minutos. Cada toma guarda las vistas con cámara en el mismo instante y sigue capturando mientras llenas los pasos 2 y 3. Elige qué toma analizar (por defecto, la más reciente).
    2. **Tarea**: identificador, tipo de tarea (levantamiento, transporte con o sin auxiliar), carga, agarre, postura y tipo de trabajo.
