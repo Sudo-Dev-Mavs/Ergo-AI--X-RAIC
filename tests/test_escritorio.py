@@ -11,6 +11,7 @@ def _recursos(tmp_path: Path) -> Path:
     (recursos / "models").mkdir()
     (recursos / "config" / "umbrales.yaml").write_text("original: 1\n", encoding="utf-8")
     (recursos / "models" / "pose_landmarker_heavy.task").write_bytes(b"modelo-v2")
+    (recursos / "models" / "blaze_face_short_range.tflite").write_bytes(b"rostros")
     return recursos
 
 
@@ -19,6 +20,7 @@ def test_preparar_datos_copia_recursos_sin_pisar_umbrales_del_especialista(tmp_p
     escritorio.preparar_datos(datos, recursos)
     assert (datos / "config" / "umbrales.yaml").read_text(encoding="utf-8") == "original: 1\n"
     assert (datos / "data" / "casos").is_dir() and (datos / "out").is_dir()
+    assert (datos / "models" / "blaze_face_short_range.tflite").read_bytes() == b"rostros"
 
     (datos / "config" / "umbrales.yaml").write_text("ajustado: 2\n", encoding="utf-8")
     (datos / "models" / "pose_landmarker_heavy.task").write_bytes(b"viejo")

@@ -48,8 +48,8 @@ def main() -> int:
     if not (RAIZ / "src/ergoai/web/dist/index.html").is_file():
         sys.exit("Falta la interfaz compilada (src/ergoai/web/dist). Ejecuta con --web.")
 
-    if not (RAIZ / "models/pose_landmarker_heavy.task").is_file():
-        paso("Descargando el modelo de pose")
+    if not all((RAIZ / "models" / m).is_file() for m in ("pose_landmarker_heavy.task", "blaze_face_short_range.tflite")):
+        paso("Descargando los modelos de MediaPipe")
         correr([sys.executable, str(RAIZ / "scripts/descargar_modelo.py")], cwd=RAIZ)
     if not (RAIZ / "empaquetado/icono.ico").is_file():
         correr([sys.executable, str(RAIZ / "empaquetado/generar_icono.py")])

@@ -47,10 +47,10 @@ def preparar_datos(datos: Path, recursos: Path) -> None:
     config = datos / "config" / "umbrales.yaml"
     if not config.is_file():
         shutil.copy2(recursos / "config" / "umbrales.yaml", config)
-    origen_modelo = recursos / "models" / "pose_landmarker_heavy.task"
-    destino_modelo = datos / "models" / "pose_landmarker_heavy.task"
-    if origen_modelo.is_file() and (not destino_modelo.is_file() or destino_modelo.stat().st_size != origen_modelo.stat().st_size):
-        shutil.copy2(origen_modelo, destino_modelo)
+    for nombre in ("pose_landmarker_heavy.task", "blaze_face_short_range.tflite"):  # pose y rostros (difuminado)
+        origen_modelo, destino_modelo = recursos / "models" / nombre, datos / "models" / nombre
+        if origen_modelo.is_file() and (not destino_modelo.is_file() or destino_modelo.stat().st_size != origen_modelo.stat().st_size):
+            shutil.copy2(origen_modelo, destino_modelo)
 
 
 def candidatos_navegador() -> list[str]:

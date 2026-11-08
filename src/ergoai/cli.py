@@ -1,6 +1,7 @@
 """Interfaz de línea de comandos de las fases 0 y 1."""
 
 import argparse
+import hashlib
 import json
 import time
 from datetime import datetime
@@ -13,6 +14,7 @@ from .config import Configuracion, cargar_configuracion
 from .io_imagenes import ImagenRGB, cargar_imagen
 from .modelos import Landmark, PoseResult, VistaPose, WorldLandmark
 from .pose import MediaPipeBackend, PoseBackend
+from .privacidad import personas_desde_dict
 from .informe import generar_informe
 from .reba import calcular_reba
 from .recomendaciones import generar_recomendaciones, ordenar
@@ -91,6 +93,33 @@ def _cargar_contexto(caso: Path) -> dict[str, Any]:
     return contenido
 
 
+class _PosesFijas:
+    """Backend que devuelve una pose ya detectada (la de la toma original, antes de difuminar)."""
+
+    def __init__(self, personas: list[PoseResult]) -> None:
+        self.personas = personas
+
+    def detect(self, image: Any) -> list[PoseResult]:
+        return self.personas
+
+
+def _pose_cacheada(caso: Path, nombre: str, ruta_imagen: Path, imagen: ImagenRGB) -> list[PoseResult] | None:
+    """Pose guardada junto a una toma de cámara, solo si corresponde exactamente a esta imagen."""
+
+    ruta = caso / f"{nombre}.pose.json"
+    if not ruta.is_file():
+        return None
+    try:
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
+        if datos.get("sha256") != hashlib.sha256(ruta_imagen.read_bytes()).hexdigest():
+            return None
+        if (datos.get("ancho"), datos.get("alto")) != (imagen.ancho, imagen.alto):
+            return None
+        return personas_desde_dict(datos.get("personas", []))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None) -> Path:
     """Procesa todas las vistas disponibles y escribe `out/<caso>/pose.json`."""
 
@@ -112,8 +141,11 @@ def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None) ->
         indice = indices.get(nombre)
         if indice is not None and (not isinstance(indice, int) or isinstance(indice, bool)):
             raise ValueError(f"contexto.json: persona_indice.{nombre} debe ser entero o null.")
-        vista = procesar_vista(nombre, imagen, detector, configuracion, indice)
+        cacheadas = _pose_cacheada(caso, nombre, ruta_imagen, imagen)
+        vista = procesar_vista(nombre, imagen, _PosesFijas(cacheadas) if cacheadas is not None else detector, configuracion, indice)
         vistas[nombre] = vista.a_diccionario(configuracion.pose.vis_min)
+        if cacheadas is not None:
+            vistas[nombre]["fuente_pose"] = "captura antes de difuminar el rostro"
         guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min)
         if not vista.detectado:
             advertencias.append(f"vista {nombre}: {vista.motivo}")

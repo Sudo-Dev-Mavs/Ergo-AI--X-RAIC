@@ -27,6 +27,34 @@ def _detectar_en_hijo(configuracion: dict[str, Any], raiz: str, imagen: np.ndarr
     return _DETECTOR.detect(imagen)
 
 
+_ROSTROS: Any = None
+MODELO_ROSTROS = "models/blaze_face_short_range.tflite"
+
+
+def _rostros_en_hijo(raiz: str, imagen: np.ndarray) -> list[tuple[float, float, float, float]]:
+    """Cajas (x, y, ancho, alto) de rostros con BlazeFace; lista vacía si el modelo no está."""
+
+    global _ROSTROS
+    from pathlib import Path as _Path
+
+    ruta = _Path(raiz) / MODELO_ROSTROS
+    if not ruta.is_file():
+        return []
+    from .pose import bloquear_audio_de_mediapipe
+
+    bloquear_audio_de_mediapipe()
+    import mediapipe as mp
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision
+
+    if _ROSTROS is None:
+        _ROSTROS = vision.FaceDetector.create_from_options(vision.FaceDetectorOptions(
+            base_options=mp_python.BaseOptions(model_asset_path=str(ruta)), min_detection_confidence=0.4))
+    resultado = _ROSTROS.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(imagen)))
+    return [(float(d.bounding_box.origin_x), float(d.bounding_box.origin_y), float(d.bounding_box.width), float(d.bounding_box.height))
+            for d in resultado.detections]
+
+
 class DetectorAislado:
     """Implementa ``PoseBackend`` delegando la detección a un único proceso trabajador."""
 
@@ -44,8 +72,14 @@ class DetectorAislado:
         return self._ejecutor
 
     def detect(self, image: np.ndarray) -> list[PoseResult]:
+        return self._ejecutar(self.funcion, self.configuracion, self.raiz, image)
+
+    def detectar_rostros(self, image: np.ndarray) -> list[tuple[float, float, float, float]]:
+        return self._ejecutar(_rostros_en_hijo, self.raiz, image)
+
+    def _ejecutar(self, funcion: Callable[..., Any], *argumentos: Any) -> Any:
         try:
-            return self._trabajador().submit(self.funcion, self.configuracion, self.raiz, image).result(timeout=self.tiempo_max_s)
+            return self._trabajador().submit(funcion, *argumentos).result(timeout=self.tiempo_max_s)
         except BrokenProcessPool as exc:
             self.cerrar()
             raise RuntimeError(

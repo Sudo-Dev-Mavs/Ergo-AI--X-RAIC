@@ -103,7 +103,14 @@ export function HaloSegmented({
     }
     const ro = new ResizeObserver(() => measureThumb())
     ro.observe(track)
-    return () => ro.disconnect()
+    // Adaptación ErgoAI: también al cambiar el ancho de cada opción y al terminar de cargar la fuente.
+    itemRefs.current.forEach((item) => ro.observe(item))
+    let vigente = true
+    void document.fonts?.ready.then(() => vigente && measureThumb())
+    return () => {
+      vigente = false
+      ro.disconnect()
+    }
   }, [measureThumb])
 
   return (
@@ -196,7 +203,7 @@ export function HaloSegmented({
             {items.map((item) => (
               <Toggle
                 className={cn(
-                  "relative flex min-h-9 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-full px-3.5 py-2",
+                  "relative flex min-h-9 shrink-0 flex-auto items-center justify-center whitespace-nowrap rounded-full px-3.5 py-2",
                   "font-medium text-muted-foreground text-sm tracking-tight antialiased",
                   "outline-none transition-colors duration-200 ease-out",
                   "focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background",

@@ -110,6 +110,24 @@ export interface EstadoCaso {
   fotos: Vista[]
 }
 
+export interface PrivacidadVista {
+  rostros: number | null
+  metodo: "pose" | "rostro" | null
+}
+
+export interface Toma {
+  id: string
+  fecha: string
+  vistas: Vista[]
+  privacidad?: Partial<Record<Vista, PrivacidadVista>>
+}
+
+export interface ListaTomas {
+  tomas: Toma[]
+  max_tomas?: number
+  retencion_horas?: number
+}
+
 export class ErrorApi extends Error {
   constructor(public estado: number, mensaje: string) {
     super(mensaje)
@@ -153,4 +171,13 @@ export const api = {
   archivo: (id: string, nombre: string, version?: string) =>
     `/api/casos/${encodeURIComponent(id)}/archivos/${nombre}${version ? `?v=${encodeURIComponent(version)}` : ""}`,
   foto: (id: string, vista: Vista) => `/api/casos/${encodeURIComponent(id)}/fotos/${vista}`,
+  tomas: (borrador: string) => pedir<ListaTomas>(`/api/capturas/${encodeURIComponent(borrador)}`),
+  capturar: (borrador: string, vistas: Partial<Record<Vista, Blob>>) => {
+    const formulario = new FormData()
+    for (const [vista, imagen] of Object.entries(vistas)) if (imagen) formulario.set(vista, imagen, `${vista}.jpg`)
+    return pedir<{ toma: Toma; tomas: Toma[] }>(`/api/capturas/${encodeURIComponent(borrador)}`, { method: "POST", body: formulario })
+  },
+  descartarTomas: (borrador: string) => pedir<ListaTomas>(`/api/capturas/${encodeURIComponent(borrador)}`, { method: "DELETE" }),
+  captura: (borrador: string, toma: string, vista: Vista) =>
+    `/api/capturas/${encodeURIComponent(borrador)}/${encodeURIComponent(toma)}/${vista}`,
 }

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import socket
 import threading
 import webbrowser
@@ -21,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__
+from . import capturas, privacidad
 from . import validacion as val
 from .cli import EXTENSIONES_IMAGEN, VISTAS, ejecutar_evaluar, ejecutar_validacion
 from .config import cargar_configuracion
@@ -58,6 +60,8 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
 
     app = FastAPI(title="ErgoAI", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json")
     candado = threading.Lock()  # MediaPipe y la escritura de archivos no deben correr en paralelo
+    candado_capturas = threading.Lock()
+    capturas.purgar_vencidas(raiz)
 
     def config_reba():
         return cargar_configuracion(raiz / "config" / "umbrales.yaml").reba
@@ -72,6 +76,19 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         if not (carpeta / "resultado.json").is_file():
             raise HTTPException(404, f"No existe una evaluación para el caso «{caso_id}».")
         return carpeta
+
+    detector_local: list[PoseBackend] = []
+
+    def detector_pose() -> PoseBackend:
+        """El detector inyectado o, si no hay, MediaPipe en este proceso."""
+
+        if backend is not None:
+            return backend
+        if not detector_local:
+            from .pose import MediaPipeBackend
+
+            detector_local.append(MediaPipeBackend(cargar_configuracion(raiz / "config" / "umbrales.yaml").pose, raiz))
+        return detector_local[0]
 
     def carpeta_entrada(caso_id: str) -> Path:
         return raiz / "data" / "casos" / validar_id(caso_id)
@@ -128,7 +145,10 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
     def crear_caso(
         contexto: str = Form(...), reemplazar: bool = Form(False),
         frente: UploadFile | None = File(None), costado: UploadFile | None = File(None), aerea: UploadFile | None = File(None),
+        borrador: str | None = Form(None), toma: str | None = Form(None), vistas_toma: str | None = Form(None),
     ) -> dict[str, Any]:
+        """Crea o reanaliza un caso con fotos subidas y/o las vistas de una toma de cámara."""
+
         try:
             datos = json.loads(contexto)
         except json.JSONDecodeError as exc:
@@ -138,9 +158,20 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         caso_id = validar_id(str(datos.get("caso_id", "")).strip())
         datos["caso_id"] = caso_id
         fotos = {nombre: archivo for nombre, archivo in (("frente", frente), ("costado", costado), ("aerea", aerea)) if archivo is not None and archivo.filename}
+        desde_toma: dict[str, Path] = {}
+        if toma:
+            if not borrador:
+                raise HTTPException(400, "Falta el borrador de la toma.")
+            validar_id(borrador)
+            permitidas = set(vistas_toma.split(",")) if vistas_toma else set(VISTAS)
+            desde_toma = {vista: ruta for vista in VISTAS
+                          if vista in permitidas and vista not in fotos and (ruta := capturas.archivo_vista(raiz, borrador, toma, vista))}
+            if not desde_toma and not fotos:
+                raise HTTPException(400, "La toma elegida ya no existe: se descartó o venció. Elige otra o captura de nuevo.")
+            datos["capturas"] = {"borrador": borrador, "toma": toma, "vistas": sorted(desde_toma)}
         destino = carpeta_entrada(caso_id)
         existentes = [vista for vista in VISTAS if any((destino / f"{vista}{ext}").is_file() for ext in EXTENSIONES_IMAGEN)]
-        if not fotos and not existentes:
+        if not fotos and not desde_toma and not existentes:
             raise HTTPException(400, "Agrega al menos una fotografía: frente, costado o aérea.")
         if (raiz / "out" / caso_id / "resultado.json").is_file() and not reemplazar:
             raise HTTPException(409, f"El caso «{caso_id}» ya existe. Usa otro identificador o confirma que quieres reemplazarlo.")
@@ -152,7 +183,24 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                     datos["overrides"] = json.loads(anterior.read_text(encoding="utf-8")).get("overrides", {})
                 except (json.JSONDecodeError, AttributeError):
                     datos["overrides"] = {}
+            nuevas = set(fotos) | set(desde_toma)
+            if nuevas:  # un juego nuevo de vistas reemplaza por completo al anterior
+                for vista in VISTAS:
+                    if vista not in nuevas:
+                        for ext in EXTENSIONES_IMAGEN:
+                            (destino / f"{vista}{ext}").unlink(missing_ok=True)
+                        (destino / f"{vista}.pose.json").unlink(missing_ok=True)
+            for vista, ruta in desde_toma.items():
+                for ext in EXTENSIONES_IMAGEN:
+                    (destino / f"{vista}{ext}").unlink(missing_ok=True)
+                shutil.copy2(ruta, destino / f"{vista}{ruta.suffix}")
+                pose = capturas.archivo_pose(raiz, str(borrador), str(toma), vista)
+                if pose is not None:  # pose detectada antes de difuminar el rostro
+                    shutil.copy2(pose, destino / f"{vista}.pose.json")
+                else:
+                    (destino / f"{vista}.pose.json").unlink(missing_ok=True)
             for vista, archivo in fotos.items():
+                (destino / f"{vista}.pose.json").unlink(missing_ok=True)
                 extension = Path(archivo.filename or "").suffix.lower()
                 if extension not in (".jpg", ".jpeg", ".png"):
                     raise HTTPException(400, f"La foto {vista} debe ser JPG o PNG.")
@@ -238,6 +286,54 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
             raise HTTPException(404, "Archivo no disponible.")
         descarga = {"filename": f"{caso_id}_{nombre}"} if nombre.endswith(".csv") else {}
         return FileResponse(ruta, headers={"Cache-Control": "no-store"}, **descarga)
+
+    @app.post("/api/capturas/{borrador}")
+    def capturar(
+        borrador: str, frente: UploadFile | None = File(None), costado: UploadFile | None = File(None), aerea: UploadFile | None = File(None),
+    ) -> dict[str, Any]:
+        """Guarda una toma (las vistas capturadas en el mismo instante) de forma temporal."""
+
+        validar_id(borrador)
+        imagenes = {vista: archivo.file.read(capturas.MAX_BYTES + 1) for vista, archivo in (("frente", frente), ("costado", costado), ("aerea", aerea)) if archivo is not None}
+        if not imagenes:
+            raise HTTPException(400, "La toma no trae ninguna vista.")
+        protegidas: dict[str, bytes] = {}
+        poses: dict[str, dict[str, Any]] = {}
+        detector = detector_pose()
+        for vista, contenido in imagenes.items():
+            try:
+                capturas.validar_imagen(contenido, vista)
+                protegida = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            except RuntimeError as exc:  # sin detector no se puede difuminar: no se guarda nada
+                raise HTTPException(503, f"No se guardó la toma porque no se pudo difuminar el rostro. {exc}") from exc
+            protegidas[vista], poses[vista] = protegida.jpeg, protegida.cache()
+        with candado_capturas:
+            try:
+                nueva = capturas.guardar_toma(raiz, borrador, protegidas, poses)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            capturas.purgar_vencidas(raiz)
+            return {"toma": nueva, "tomas": capturas.listar_tomas(raiz, borrador)}
+
+    @app.get("/api/capturas/{borrador}")
+    def listar_capturas(borrador: str) -> dict[str, Any]:
+        validar_id(borrador)
+        return {"tomas": capturas.listar_tomas(raiz, borrador), "max_tomas": capturas.MAX_TOMAS, "retencion_horas": capturas.RETENCION_HORAS}
+
+    @app.get("/api/capturas/{borrador}/{toma}/{vista}")
+    def imagen_captura(borrador: str, toma: str, vista: str) -> FileResponse:
+        ruta = capturas.archivo_vista(raiz, validar_id(borrador), toma, vista)
+        if ruta is None:
+            raise HTTPException(404, "Captura no disponible.")
+        return FileResponse(ruta, headers={"Cache-Control": "private, max-age=86400"})
+
+    @app.delete("/api/capturas/{borrador}")
+    def descartar_capturas(borrador: str) -> dict[str, Any]:
+        with candado_capturas:
+            capturas.descartar(raiz, validar_id(borrador))
+        return {"tomas": []}
 
     @app.get("/api/casos/{caso_id}/fotos/{vista}")
     def foto_original(caso_id: str, vista: str) -> FileResponse:

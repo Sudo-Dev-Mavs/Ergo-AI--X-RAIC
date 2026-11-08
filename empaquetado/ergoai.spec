@@ -12,6 +12,7 @@ datas = [
     (str(RAIZ / "src/ergoai/web/dist"), "ergoai/web/dist"),
     (str(RAIZ / "config/umbrales.yaml"), "recursos/config"),
     (str(RAIZ / "models/pose_landmarker_heavy.task"), "recursos/models"),
+    (str(RAIZ / "models/blaze_face_short_range.tflite"), "recursos/models"),
     (str(RAIZ / "web/LICENCIAS-TERCEROS.md"), "licencias"),
 ]
 binaries = []

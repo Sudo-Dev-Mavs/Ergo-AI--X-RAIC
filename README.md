@@ -26,7 +26,7 @@ Beta local para evaluar posturas de trabajo a partir de fotografías y contexto 
 git clone https://github.com/marco-venegas-sepulveda/Ergo-AI--X-RAIC.git
 cd Ergo-AI--X-RAIC
 uv sync
-uv run python scripts/descargar_modelo.py
+uv run python scripts/descargar_modelo.py   # pose y detector de rostros
 ```
 
 ## Uso
@@ -57,7 +57,14 @@ uv run ergoai-gui
 Abre `http://127.0.0.1:8765/` en el navegador. El servidor escucha solo en este equipo; las fotos y resultados no salen de él. La interfaz ya viene compilada en `src/ergoai/web/dist`, así que no hace falta Node para usarla.
 
 1. **Casos**: lista ordenada por riesgo, con los casos alto/muy alto sin validar primero. Cada fila muestra el REBA inicial y el residual esperado sobre la escala 1–15.
-2. **Nueva evaluación**: sube las fotos de costado, frente y aérea, elige el tipo de tarea (levantamiento, transporte con o sin auxiliar), la carga, el agarre y los ajustes que la foto no muestra, y pulsa **Analizar postura**.
+2. **Nueva evaluación**, en tres pasos entre los que puedes ir y volver antes de analizar:
+   1. **Fotografías**: para cada vista (costado, frente, aérea) elige *Archivo* o *Cámara*. Con **Detectar cámaras** aparecen las cámaras conectadas con su nombre; asigna una a cada vista y define **Capturar cada N** segundos o minutos. Cada toma guarda las vistas con cámara en el mismo instante y sigue capturando mientras llenas los pasos 2 y 3. Elige qué toma analizar (por defecto, la más reciente).
+   2. **Tarea**: identificador, tipo de tarea (levantamiento, transporte con o sin auxiliar), carga, agarre, postura y tipo de trabajo.
+   3. **Lo que la foto no muestra**: ajustes REBA observados en piso, resumen de lo que se va a analizar y **Analizar postura**.
+
+   Las tomas se guardan solo en este equipo, en `capturas/<borrador>/` dentro de la carpeta de datos, con un máximo de 120 por evaluación; se borran a las 24 h o con **Descartar tomas**. Al analizar, la toma elegida se copia al caso y queda registrada en su contexto.
+
+   **Privacidad de las tomas**: antes de guardar, ErgoAI detecta la pose en la imagen original, ubica la cabeza (nariz, ojos, orejas y boca, con margen) y la difumina con mosaico y desenfoque; si no hay pose, usa el detector de rostros de MediaPipe (BlazeFace). En disco solo queda la imagen difuminada. La pose medida antes de difuminar se guarda en `<vista>.pose.json`, ligada a la imagen por SHA-256, y el análisis la reutiliza para no perder precisión en el cuello. Si el detector no está disponible, la toma no se guarda. La vista previa en vivo no se almacena. Las fotos subidas como archivo no se modifican: deben venir ya sin rostros.
 3. **Caso**: goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), más cuatro pestañas:
    - **Recomendaciones**: aprueba, edita, rechaza con motivo o agrega controles; **Aprobar informe** se habilita cuando no quedan pendientes. Las propuestas se dibujan punteadas y las aprobadas con trazo sólido.
    - **Postura medida**: ángulos por segmento con su banda REBA; el especialista puede corregir un ángulo y ErgoAI recalcula y lo registra.
