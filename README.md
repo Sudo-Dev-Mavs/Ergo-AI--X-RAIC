@@ -60,9 +60,8 @@ Requisitos:
 - Node.js 20 o superior, solo si vas a modificar la interfaz web.
 
 ```powershell
-git clone https://github.com/marco-venegas-sepulveda/Ergo-AI--X-RAIC.git
+git clone https://github.com/Sudo-Dev-Mavs/Ergo-AI--X-RAIC.git
 cd Ergo-AI--X-RAIC
-git switch DevM
 uv sync
 uv run python scripts/descargar_modelo.py   # pose (30 MB) y detector de rostros (230 KB)
 ```
