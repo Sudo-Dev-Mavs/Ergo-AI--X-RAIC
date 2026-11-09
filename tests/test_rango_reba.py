@@ -80,3 +80,13 @@ def test_apoyo_de_piernas_usa_tobillos_en_3d_y_no_la_perspectiva(configuracion, 
     medidas = completar_con_respaldos([], {"costado": _costado(0.90, tobillo_r)}, CONTEXTO, configuracion)
     apoyo = next(m for m in medidas if m.medida == "apoyo_piernas_unilateral")
     assert apoyo.valor_deg == esperado and apoyo.metodo.startswith("respaldo 3D") and "vista_respaldo" in apoyo.banderas
+
+
+def test_informe_muestra_rango_en_lugar_de_guion() -> None:
+    from ergoai.informe import _cifra_riesgo
+
+    rango = {"min": 4, "max": 6, "nivel": "Medio", "nivel_accion": 2}
+    assert _cifra_riesgo({"reba": None, "nivel_riesgo": None, "rango": rango}) == "<b>4–6</b> (Medio, estimado)"
+    amplio = {"min": 6, "max": 9, "nivel": None, "nivel_accion": None}
+    assert _cifra_riesgo({"reba": None, "nivel_riesgo": None, "rango": amplio}) == "<b>6–9</b> (nivel por confirmar)"
+    assert _cifra_riesgo({"reba": 3, "nivel_riesgo": "Bajo", "rango": None}) == "<b>3</b> (Bajo)"

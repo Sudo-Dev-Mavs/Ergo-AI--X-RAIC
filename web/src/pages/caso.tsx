@@ -140,6 +140,8 @@ export function CasoPage({ id }: { id: string }) {
         <ComparadorResidual
           inicial={reba.final.reportado}
           residual={residual.residual.reba}
+          rangoInicial={reba.final.rango}
+          rangoResidual={residual.residual.rango}
           origen={residual.origen_residual ?? "agente"}
         />
         <div className="hoja flex flex-col justify-center gap-3 p-5">

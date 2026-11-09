@@ -336,16 +336,26 @@ def generar_recomendaciones(
         )
 
     # NOM-036 / rúbrica Track 4: con REBA ≥ 8 está prohibido dejar solo medidas administrativas
-    # (rotación, pausas, capacitación). Se exige al menos un control de ingeniería o rediseño con efecto.
+    # (rotación, pausas, capacitación). Si ninguna regla específica encontró un segmento medido que
+    # corregir, se agrega un control de ingeniería general. No lleva efecto: el agente no sabe qué
+    # solución se elegirá ni cuánto baja el REBA, así que no proyecta reducción; el especialista
+    # fija el riesgo residual al validar (``validacion.ajustar_residual``).
     if riesgo_alto and not any(rec.jerarquia in ("ingenieria", "rediseno") and rec.efecto for rec in recs):
+        rango = (reba.get("final") or {}).get("rango") or {}
+        if puntaje is not None:
+            etiqueta = f"REBA {puntaje}"
+        elif rango.get("min") is not None:
+            etiqueta = f"REBA {rango['min']}–{rango['max']} (estimado)"
+        else:
+            etiqueta = "REBA ≥ 8"
         agregar(
             "R-ESTACION-ING", "general",
-            f"REBA {puntaje if puntaje is not None else '≥ 8'}: riesgo alto/muy alto sin control de ingeniería medible.",
+            f"{etiqueta}: riesgo alto/muy alto y ninguna regla específica encontró un segmento medido que corregir.",
             "Instalar mesa de altura ajustable, polipasto/lifter o rediseño de alcances para eliminar la postura forzada; "
-            "la rotación de personal y las pausas activas quedan solo como contención temporal hasta el rediseño.",
+            "la rotación de personal y las pausas activas quedan solo como contención temporal hasta el rediseño. "
+            "El agente no proyecta cuánto baja el REBA con este control: el especialista elige la solución y fija "
+            "el riesgo residual al validar.",
             "ingenieria", ["nom_control", "f00014_b", "reba"],
-            {"mediciones": {"tronco_flexion": 10.0, **_lados("brazo_flexion", 15.0), **_lados("rodilla_flexion", 0.0)},
-             "contexto": {"carga_kg": 0, "actividad.repetitiva_mas_4_por_min": False}},
         )
 
     if riesgo_alto:

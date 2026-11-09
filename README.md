@@ -91,11 +91,11 @@ uv run ergoai-gui                    # abre http://127.0.0.1:8765/
 uv run ergoai-gui --sin-navegador    # solo el servidor
 ```
 
-La interfaz ya viene compilada en `src/ergoai/web/dist`; no hace falta Node para usarla. Escribe tu nombre en **Firmas como** (riel lateral): cada decisión queda registrada con él.
+La interfaz ya viene compilada en `src/ergoai/web/dist`; no hace falta Node para usarla. Escribe tu nombre en **Firmas como** (riel lateral): cada decisión queda registrada con él. En el mismo riel, **Opciones** ajusta la densidad de la interfaz, la foto con que abre un caso (anotada u original), si se pide confirmación al aprobar o rechazar y si el visor muestra sus atajos; se guardan en este equipo.
 
-**Inicio · Evaluación ergonómica**
-- A la izquierda, cómo empezar y el botón **Nueva evaluación**.
-- Al costado, **Casos evaluados**, ordenados por riesgo: primero los de riesgo alto o muy alto sin validar. Cada caso muestra su REBA, el residual esperado sobre la escala 1–15, las propuestas por validar y si el informe está aprobado.
+**Inicio · Evaluaciones ergonómicas**
+- Botón **Nueva evaluación** en el encabezado y, al costado, **Cómo funciona** (plegable).
+- **Casos**, ordenados por riesgo: primero los de mayor riesgo sin validar. Cada caso muestra su REBA, el residual esperado, las propuestas por validar, el estado de validación y un acceso directo a **Validar**. Si falta un dato, el REBA aparece como rango (por ejemplo «4–6 · Medio, estimado»).
 
 **Nueva evaluación**, en tres pasos entre los que puedes ir y volver antes de analizar:
 
@@ -109,8 +109,14 @@ La interfaz ya viene compilada en `src/ergoai/web/dist`; no hace falta Node para
 
 Con costado y frente se obtiene un REBA completo; la aérea agrega la torsión del tronco. Sin la vista de frente, el apoyo de piernas y la abducción quedan pendientes.
 
+**Validación**
+- **Cola** con los casos cuyo informe no está aprobado, ordenada por nivel de riesgo y propuestas pendientes; se puede ocultar.
+- Al centro, la evidencia (visor de fotos con zoom, costado, frente y aérea, anotada u original) y las recomendaciones para aprobar, editar o rechazar.
+- A la derecha, el comparador **Inicial vs Residual**. Si el especialista considera que el agente fue optimista, mueve el control del residual (1–15), escribe el motivo y guarda: el residual queda como «Ajuste manual», el cambio entra en la bitácora y el informe vuelve a BORRADOR. **Restaurar IA** regresa al residual calculado por el agente.
+- **Aprobar acciones de piso** se habilita cuando hay nombre en «Firmas como», no quedan propuestas sin decidir y no hay bloqueos.
+
 **Caso**
-- Goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), datos de la tarea y tiempo de análisis.
+- Goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), datos de la tarea, tiempo de análisis y el comparador Inicial vs Residual.
 - **Recomendaciones**: aprobar, editar, rechazar con motivo o agregar controles propios. **Aprobar informe** se habilita cuando no quedan propuestas sin decidir. Las propuestas se dibujan con borde punteado, las aprobadas con trazo sólido y las rechazadas tachadas.
 - **Postura medida**: ángulos por segmento con su banda REBA y banderas. El especialista puede corregir un ángulo; ErgoAI recalcula y lo registra.
 - **Bitácora**: historial firmado con verificación de integridad.
@@ -158,6 +164,8 @@ uv run ergoai validar out/caso01 aprobar --usuario "Ing. Pérez" --rec R-TRONCO-
 uv run ergoai validar out/caso01 editar --usuario "Ing. Pérez" --rec R-TRONCO-ING --campo responsable="IE celda 3" --campo fecha_compromiso=2026-12-01
 uv run ergoai validar out/caso01 rechazar --usuario "Ing. Pérez" --rec R-AGARRE-RED --comentario "contenedor del cliente"
 uv run ergoai validar out/caso01 agregar --usuario "Ing. Pérez" --campo problema="..." --campo solucion="..." --campo jerarquia=rediseno
+uv run ergoai validar out/caso01 ajustar_residual --usuario "Ing. Pérez" --campo riesgo_residual_proyectado=6 --comentario "el lifter no elimina toda la flexión"
+uv run ergoai validar out/caso01 limpiar_residual --usuario "Ing. Pérez"   # vuelve al residual del agente
 uv run ergoai validar out/caso01 aprobar_informe --usuario "Ing. Pérez"
 uv run ergoai informe out/caso01           # regenera informe.html y el CSV
 ```
@@ -233,6 +241,8 @@ Para borrar un caso, elimina `data/casos/<caso>/` y `out/<caso>/`.
 
 Hignett y McAtamney (2000). Se evalúan bandas por segmento con los umbrales de `config/umbrales.yaml`, las tablas A, B y C, la carga o fuerza, el agarre y la actividad, por lado; se reporta el peor lado.
 
+Si falta un ángulo o un ajuste, el puntaje queda pendiente, pero ErgoAI calcula el **rango** posible probando todos los valores que podría tomar lo que falta. Si todo el rango cae en un mismo nivel (por ejemplo 4–6, Medio), ese nivel se usa para priorizar y se muestra como «estimado»; si el rango cruza niveles, el nivel queda por confirmar. Completar el dato en **Postura medida** fija el puntaje.
+
 | REBA | Riesgo | Acción |
 |---|---|---|
 | 1 | Inapreciable | No necesaria |
@@ -247,7 +257,7 @@ Hignett y McAtamney (2000). Se evalúan bandas por segmento con los umbrales de 
 
 | Jerarquía | Ejemplos de reglas |
 |---|---|
-| Ingeniería | `R-CARGA-ING` (más de 14 kg: asistencia mecánica), `R-TRANSP-ING` (auxiliar de transporte), `R-TRONCO-ING` (altura de trabajo ajustable), `R-MUNECA-ING` (otra herramienta o fixture), `R-REPET-ING` (automatizar el paso repetitivo) |
+| Ingeniería | `R-CARGA-ING` (más de 14 kg: asistencia mecánica), `R-TRANSP-ING` (auxiliar de transporte), `R-TRONCO-ING` (altura de trabajo ajustable), `R-MUNECA-ING` (otra herramienta o fixture), `R-REPET-ING` (automatizar el paso repetitivo), `R-ESTACION-ING` (control general en riesgo alto, ver abajo) |
 | Rediseño de estación | `R-LEV-RED`, `R-TORSION-RED`, `R-CUELLO-RED`, `R-PIERNAS-RED`, `R-BRAZO-RED`, `R-ANTEBRAZO-RED`, `R-AGARRE-RED`, `R-AUX-RED`, `R-BASE-RED`, `R-SILLA-RED` (Ley silla) |
 | Administrativa | `R-CARGA-ADM` (levantamiento en equipo como contención), `R-REPET-ADM` (rotación y pausas), `R-CAPAC-ADM` (capacitación y vigilancia a la salud) |
 
@@ -257,11 +267,13 @@ Fuentes:
 - Jabil 16-PE30-6500-00023 §6.4: límite de 14 kg por persona, evitar levantar desde el piso o sobre la cabeza (máx. 1.7 m en rack, 1.6 m en carro), 60 cm libres, Ley silla y conveyors de 0.5 a 1.4 m.
 - Formato 16-PE80-6500-00014: alturas de trabajo (95–120 cm precisión, 85–110 cm ligero, 65–95 cm pesado), ayudas visuales e iluminación.
 
-En casos de riesgo alto o muy alto, el informe exige al menos un control de ingeniería o de rediseño aprobado. Si en un caso así ninguna regla propone un control con efecto medible, se agrega `R-REVISION`: una revisión presencial del especialista.
+En casos de riesgo alto o muy alto (REBA ≥ 8), la NOM-036-1 no admite un paquete solo administrativo: el informe exige al menos un control de ingeniería o de rediseño aprobado, y la rotación, las pausas y la capacitación se marcan como complemento. Si en un caso así ninguna regla específica encontró un segmento medido que corregir, se agrega `R-ESTACION-ING` (mesa de altura ajustable, polipasto o rediseño de alcances). Este control no lleva efecto calculado: el agente no sabe qué solución se elegirá, así que no proyecta cuánto baja el REBA y el especialista fija el residual al validar.
 
 ### Riesgo residual
 
-`src/ergoai/residual.py` aplica el efecto de cada control de ingeniería o rediseño **no rechazado**. Por ejemplo, la altura ajustable lleva el tronco a 10° y la asistencia mecánica lleva la carga a 0 kg. Luego recalcula el REBA con el mismo método. Las medidas administrativas no se cuentan. También calcula cuántos puntos reduce cada recomendación por sí sola. Son estimaciones: conviene confirmarlas con una foto nueva después de implementar.
+`src/ergoai/residual.py` aplica el efecto de cada control de ingeniería o rediseño **no rechazado**. Por ejemplo, la altura ajustable lleva el tronco a 10° y la asistencia mecánica lleva la carga a 0 kg. Un efecto solo mejora un valor medido: no inventa una medición ausente ni empeora una que ya está en su objetivo. Luego recalcula el REBA con el mismo método. Las medidas administrativas y los controles sin efecto no se cuentan. También calcula cuántos puntos reduce cada recomendación por sí sola. Si falta un dato, el residual también se reporta como rango.
+
+Son estimaciones: conviene confirmarlas con una foto nueva después de implementar. Si el especialista considera que el agente fue optimista, puede fijar el residual a mano (1–15, con motivo obligatorio). La lista de casos lo marca como fijado por el especialista, el informe muestra también el valor que estimaba el agente y el cambio queda en la bitácora.
 
 ### Validación e informe
 
@@ -305,7 +317,7 @@ La interfaz (`web/`) usa React 19, TypeScript, Tailwind CSS 4 y `motion`, con co
 | `GET /api/casos` | Casos ordenados por riesgo. |
 | `GET /api/casos/{caso}` | Resultado, validación, riesgo residual y condiciones pendientes para aprobar. |
 | `POST /api/casos` | Crear o reanalizar un caso (multipart: `contexto`, fotos y/o `borrador` + `toma`). |
-| `POST /api/casos/{caso}/validacion` | Aprobar, rechazar, reabrir, editar, agregar o aprobar el informe. |
+| `POST /api/casos/{caso}/validacion` | Aprobar, rechazar, reabrir, editar, agregar, ajustar o restaurar el residual (`ajustar_residual`, `limpiar_residual`) o aprobar el informe. |
 | `POST /api/casos/{caso}/correcciones` | Corregir ángulos y recalcular. |
 | `GET /api/casos/{caso}/archivos/{nombre}` | Informe, CSV e imágenes anotadas. |
 | `POST`, `GET`, `DELETE /api/capturas/{borrador}` | Guardar, listar y descartar tomas de cámara. |
@@ -392,15 +404,15 @@ npm run build                       # recompila src/ergoai/web/dist (se versiona
 |---|---|---|
 | Imagen, pose y ángulos | Implementado | Medición 2D por vista con respaldo entre vistas y 3D, banderas e imágenes anotadas por banda REBA. Las medidas 3D de flexión dan solo la magnitud. |
 | REBA | Implementado | Ambos lados, contexto, correcciones del especialista y pendientes explícitos. |
-| Recomendaciones y riesgo residual | Implementado | Reglas NOM-036-1 + Jabil con jerarquía; el efecto de cada control es una estimación. |
-| Validación, bitácora e informe | Implementado | Informe HTML/PDF y CSV 00014. |
+| Recomendaciones y riesgo residual | Implementado | Reglas NOM-036-1 + Jabil con jerarquía; el efecto de cada control es una estimación y el especialista puede fijar el residual. |
+| Validación, bitácora e informe | Implementado | Página de validación con cola, informe HTML/PDF y CSV 00014. |
 | Interfaz web y ejecutable | Implementado | Ejecutable de Linux probado; el de Windows se construye con el workflow y aún no se ha probado. |
 | Cámaras y difuminado de rostros | Implementado | Probado con cámaras simuladas de Chromium y un retrato real; falta probar con las cámaras de la estación. |
 | Precisión (criterios 1 y 2 de la rúbrica) | Pendiente de datos | El protocolo, las plantillas de referencia y el reporte están listos. Falta correrlo con fotos y referencias de Jabil y demostrar 6/6 en REBA y al menos 90 % de segmentos en la misma banda. |
 | Complementos (RULA, EAWS, NOM-036, muñeca) | Siguiente versión | Módulos aislados, sin integrar a la interfaz; falta validar HandLandmarker para la muñeca. |
 
 - ErgoAI es una ayuda para el especialista; no lo sustituye.
-- Si un landmark o dato no está disponible, el resultado queda pendiente.
+- Si un landmark o dato no está disponible, el resultado queda pendiente; el REBA se acota con su rango posible.
 - Las referencias a la NOM-036-1 no incluyen numeral de inciso; el especialista puede precisarlo al validar.
 
 ## Estructura del repositorio

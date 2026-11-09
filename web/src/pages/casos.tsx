@@ -3,7 +3,7 @@ import { useState } from "react"
 
 import { BlurFade } from "@/components/magicui/blur-fade"
 import { ReglaRiesgo } from "@/components/ergo/regla-riesgo"
-import { api, type ResumenCaso } from "@/lib/api"
+import { api, type RangoReba, type ResumenCaso } from "@/lib/api"
 import { ir } from "@/lib/app"
 import { colorPuntoCaso, colorRiesgo, etiquetaReba, etiquetaTarea, fechaCorta, textoRango } from "@/lib/dominio"
 import { useDatos } from "@/lib/useDatos"
@@ -120,6 +120,20 @@ export function CasosPage() {
   )
 }
 
+/** Línea de estado del residual; marca cuando lo fijó el especialista en lugar del agente. */
+function textoResidual(caso: ResumenCaso, rango: RangoReba | null): string {
+  if (caso.reba == null && !rango) return "REBA pendiente de cálculo"
+  const residual = caso.residual != null
+    ? etiquetaReba(caso.residual, caso.nivel_residual)
+    : caso.residual_rango ? `${textoRango(caso.residual_rango)}, estimado` : null
+  const previo = caso.reba == null ? "Falta un dato" : null
+  if (caso.origen_residual === "especialista" && residual) {
+    return `${previo ? `${previo}; r` : "R"}esidual ${residual}, fijado por el especialista`
+  }
+  if (previo) return `${previo}${residual ? `; residual ${residual}` : ""}`
+  return caso.residual != null && caso.residual < (caso.reba ?? 0) ? `Residual ${residual}` : "Sin reducción residual"
+}
+
 function FilaCaso({ caso }: { caso: ResumenCaso }) {
   const urgente = (caso.nivel_accion ?? 0) >= 3 && caso.estado_informe !== "aprobado"
   const estadoPrincipal = caso.estado_informe === "aprobado"
@@ -168,13 +182,7 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
           )}
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[13px]">
             <span className="text-graphite">
-              {caso.reba == null
-                ? rango
-                  ? `Falta un dato${caso.residual_rango ? `; residual ${textoRango(caso.residual_rango)}, estimado` : ""}`
-                  : "REBA pendiente de cálculo"
-                : caso.residual != null && caso.residual < caso.reba
-                  ? `Residual ${etiquetaReba(caso.residual, caso.nivel_residual)}`
-                  : "Sin reducción residual"}
+              {textoResidual(caso, rango)}
             </span>
             <span className={cn("etiqueta-estado", estadoPrincipal.cls)}>{estadoPrincipal.texto}</span>
           </div>

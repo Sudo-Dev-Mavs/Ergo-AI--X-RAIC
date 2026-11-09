@@ -68,9 +68,15 @@ def test_riesgo_alto_nunca_solo_administrativas(configuracion) -> None:
     reba["nivel_accion"] = 3
     reba["nivel_riesgo"] = "Alto"
     recs = generar_recomendaciones(mediciones, contexto, reba, configuracion.reba)
-    assert any(rec.jerarquia == "ingenieria" and rec.efecto for rec in recs)
-    assert any(rec.id == "R-ESTACION-ING" for rec in recs)
+    estacion = next(rec for rec in recs if rec.id == "R-ESTACION-ING")
+    assert estacion.jerarquia == "ingenieria"
     assert cumple_jerarquia_nom036(reba, [rec.a_diccionario() for rec in recs])
+    # Sin un segmento medido que corregir no se inventan ángulos objetivo: el residual
+    # no baja por este control y queda para que el especialista lo fije.
+    assert estacion.efecto == {}
+    residual = calcular_residual(mediciones, contexto, [rec.a_diccionario() for rec in recs], configuracion.reba)
+    assert residual["residual"]["reba"] == residual["inicial"]["reba"]
+    assert "R-ESTACION-ING" not in residual["recomendaciones_aplicadas"]
 
 
 def test_especialista_puede_ajustar_residual(tmp_path, configuracion) -> None:

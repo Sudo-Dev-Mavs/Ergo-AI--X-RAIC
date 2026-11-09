@@ -1,4 +1,4 @@
-import { ClipboardCheck, FilePlus2, House, PenLine, Shield } from "lucide-react"
+import { ClipboardCheck, FilePlus2, House, LockKeyhole, PenLine, Shield } from "lucide-react"
 
 import { PolishedToaster } from "@/components/cult/halo-toast"
 import { Goniometro } from "@/components/ergo/goniometro"
@@ -45,8 +45,8 @@ function Riel({ actual }: { actual: string }) {
     { ruta: "nueva" as const, texto: "Nueva evaluación", icono: FilePlus2, activo: actual === "nueva" },
   ]
   return (
-    <aside className="sticky top-0 z-30 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule/80 bg-sheet/80 px-4 py-3 backdrop-blur-md lg:h-dvh lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-7 lg:border-r lg:border-b-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
-      <div className="marca-jabil flex w-full flex-wrap items-center gap-3 rounded-xl px-4 py-3 lg:min-h-dvh lg:flex-col lg:items-stretch lg:gap-8 lg:rounded-none lg:px-5 lg:py-8">
+    <aside className="sticky top-0 z-30 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule/80 bg-sheet/80 px-4 py-3 backdrop-blur-md lg:h-dvh lg:flex-col lg:flex-nowrap lg:overflow-y-auto lg:items-stretch lg:gap-7 lg:border-r lg:border-b-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+      <div className="marca-jabil flex w-full flex-wrap items-center gap-3 rounded-xl px-4 py-3 lg:min-h-dvh lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-8 lg:rounded-none lg:px-5 lg:py-8">
         <a href="#/" className="flex items-center gap-2.5" aria-label="ErgoAI, ir al inicio">
           <span className="rounded-lg bg-white/10 p-1">
             <Goniometro inicial={11} residual={4} nivel="Muy alto" nivelResidual="Medio" tamano={40} compacto className="-mb-1" />
@@ -108,6 +108,10 @@ function Riel({ actual }: { actual: string }) {
               ✓ Firmando como {nombre.trim()}
             </p>
           )}
+          <p className="mt-4 hidden items-start gap-1.5 border-t border-white/15 pt-3 text-[12px] leading-snug text-white/65 lg:flex">
+            <LockKeyhole className="mt-px size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+            Las fotos y resultados se quedan en este equipo.
+          </p>
           <div className="mt-3 lg:hidden">
             <PanelOpciones />
           </div>

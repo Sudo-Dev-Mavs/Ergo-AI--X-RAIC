@@ -28,7 +28,10 @@ export function ValidationDashboard({
   const pendientes = useMemo(
     () => casos
       .filter((c) => c.estado_informe !== "aprobado")
-      .sort((a, b) => (b.nivel_accion ?? -1) - (a.nivel_accion ?? -1) || b.por_validar - a.por_validar || (b.reba ?? -1) - (a.reba ?? -1)),
+      .sort((a, b) =>
+        (b.nivel_accion ?? b.reba_rango?.nivel_accion ?? -1) - (a.nivel_accion ?? a.reba_rango?.nivel_accion ?? -1)
+        || b.por_validar - a.por_validar
+        || (b.reba ?? b.reba_rango?.max ?? -1) - (a.reba ?? a.reba_rango?.max ?? -1)),
     [casos],
   )
 
@@ -49,8 +52,10 @@ export function ValidationDashboard({
   }, [casoActivo?.resultado.caso_id])
 
   const residualVista = borradorResidual ?? casoActivo?.residual.residual.reba ?? null
+  // Sin puntaje pero con rango entero en riesgo alto (mín. ≥ 8), la NOM-036 ya exige ingeniería.
+  const rangoInicial = casoActivo?.resultado.reba.final.rango
   const reba = useReba(
-    casoActivo?.resultado.reba.final.reportado,
+    casoActivo?.resultado.reba.final.reportado ?? (rangoInicial && rangoInicial.min >= 8 ? rangoInicial.min : null),
     residualVista,
     casoActivo?.validacion.recomendaciones ?? [],
   )
@@ -103,11 +108,11 @@ export function ValidationDashboard({
                       onClick={() => onSeleccionar(caso.caso_id)}
                       className={cn("flex w-full items-start gap-2.5 px-3 py-3 text-left", activo ? "bg-jabil/8" : "hover:bg-slate-50")}
                     >
-                      <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: colorPuntoCaso(caso.reba) }} />
+                      <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: colorPuntoCaso(caso.reba, caso.reba_rango) }} />
                       <span className="min-w-0 flex-1">
                         <span className="t-title block truncate text-[14px] text-jabil">{caso.caso_id}</span>
                         <span className="block text-[12px] text-graphite">
-                          {etiquetaReba(caso.reba, caso.nivel_riesgo)}
+                          {etiquetaReba(caso.reba, caso.nivel_riesgo, caso.reba_rango)}
                           {caso.por_validar > 0 ? ` · ${caso.por_validar} prop.` : ""}
                         </span>
                       </span>
@@ -220,6 +225,8 @@ function PanelDecision({
   const { nombre } = useEspecialista()
   const sinFirma = !nombre.trim()
   const inicial = casoActivo.resultado.reba.final.reportado
+  const rangoInicial = inicial == null ? casoActivo.resultado.reba.final.rango ?? null : null
+  const rangoResidual = residualVista == null ? casoActivo.residual.residual.rango ?? null : null
   const decididas = totalVigentes - porDecidir
   const angulosOk = (casoActivo.resultado.angulos ?? []).some((a) => a.valor_deg != null)
   const bloqueosCortos = casoActivo.bloqueos.filter((m) => !m.includes("sigue como propuesta")).slice(0, 2)
@@ -238,8 +245,10 @@ function PanelDecision({
         compacto
         inicial={inicial}
         residual={residualVista}
+        rangoInicial={rangoInicial}
+        rangoResidual={rangoResidual}
         origen={borradorResidual != null ? "especialista" : (casoActivo.residual.origen_residual ?? "agente")}
-        ajustable={!aprobado && inicial != null}
+        ajustable={!aprobado && (inicial != null || rangoInicial != null)}
         onAjustar={setBorradorResidual}
         vacioAccion={inicial == null && angulosOk ? "Hay ángulos medidos pero aún no hay REBA reportado. Revisa Postura medida o vuelve a analizar el caso." : undefined}
       />

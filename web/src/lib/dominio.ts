@@ -17,13 +17,17 @@ export function accionRiesgo(nivel: string | null | undefined): string {
   return ZONAS.find((zona) => zona.nivel === nivel)?.accion ?? "Datos pendientes"
 }
 
-/** Texto accionable cuando falta REBA (evita “—” / “Pendiente” opacos). */
-export function etiquetaReba(puntaje: number | null | undefined, nivel?: string | null): string {
-  if (puntaje == null) return "Pendiente de cálculo"
+/** Texto accionable cuando falta REBA (evita “—” / “Pendiente” opacos). Con rango, «4–6 · Medio, estimado». */
+export function etiquetaReba(puntaje: number | null | undefined, nivel?: string | null, rango?: RangoReba | null): string {
+  if (puntaje == null) {
+    if (!rango) return "Pendiente de cálculo"
+    return `${textoRango(rango)} · ${rango.nivel ? `${rango.nivel}, estimado` : "nivel por confirmar"}`
+  }
   return nivel ? `${puntaje} · ${nivel}` : String(puntaje)
 }
 
-export function colorPuntoCaso(reba: number | null | undefined): string {
+export function colorPuntoCaso(reba: number | null | undefined, rango?: RangoReba | null): string {
+  if (reba == null && rango?.nivel) return colorRiesgo(rango.nivel)
   if (reba == null) return "var(--riesgo-pendiente)"
   if (reba >= 11) return "var(--riesgo-muy-alto)"
   if (reba >= 8) return "var(--riesgo-alto)"

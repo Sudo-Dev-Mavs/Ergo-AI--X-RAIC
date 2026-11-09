@@ -1,5 +1,7 @@
 import { motion, useReducedMotion } from "motion/react"
 
+import type { RangoReba } from "@/lib/api"
+import { colorRiesgo, textoRango } from "@/lib/dominio"
 import { BANDAS_REBA, formatearComparacion } from "@/lib/useReba"
 import { cn } from "@/lib/utils"
 
@@ -13,16 +15,22 @@ interface Props {
   compacto?: boolean
   /** Mensaje accionable cuando no hay REBA inicial (p. ej. hay ángulos pero falta puntaje). */
   vacioAccion?: string
+  /** Rango posible cuando falta un dato y no hay puntaje exacto. */
+  rangoInicial?: RangoReba | null
+  rangoResidual?: RangoReba | null
 }
 
 /** Comparador Antes / Después del residual (criterio 7). */
 export function ComparadorResidual({
-  inicial, residual, origen = "agente", className, onAjustar, ajustable, compacto, vacioAccion,
+  inicial, residual, origen = "agente", className, onAjustar, ajustable, compacto, vacioAccion, rangoInicial, rangoResidual,
 }: Props) {
   const reducir = useReducedMotion() ?? false
   const cmp = formatearComparacion(inicial, residual)
   const maxBarra = 15
-  const sinDatos = inicial == null
+  const rangoI = inicial == null ? rangoInicial ?? null : null
+  const rangoR = residual == null ? rangoResidual ?? null : null
+  const sinDatos = inicial == null && !rangoI
+  const estimado = Boolean(rangoI || rangoR)
 
   if (sinDatos && compacto) {
     return (
@@ -51,8 +59,8 @@ export function ComparadorResidual({
       </div>
 
       <div className={cn("grid gap-3", compacto ? "grid-cols-2" : "sm:grid-cols-2 gap-4")}>
-        <Columna titulo="Inicial" puntaje={cmp.inicial.puntaje} nivel={cmp.inicial.nivel} color={cmp.inicial.color} accion={cmp.inicial.accion} max={maxBarra} reducir={reducir} compacto={compacto} />
-        <Columna titulo="Residual" puntaje={cmp.residual.puntaje} nivel={cmp.residual.nivel} color={cmp.residual.color} accion={cmp.residual.accion} max={maxBarra} reducir={reducir} destacado compacto={compacto} />
+        <Columna titulo="Inicial" {...cmp.inicial} rango={rangoI} max={maxBarra} reducir={reducir} compacto={compacto} />
+        <Columna titulo="Residual" {...cmp.residual} rango={rangoR} max={maxBarra} reducir={reducir} destacado compacto={compacto} />
       </div>
 
       <div className="mt-4" role="img" aria-label="Escala REBA por niveles">
@@ -73,6 +81,8 @@ export function ComparadorResidual({
       <p className="mt-3 text-[13px] leading-snug text-ink-soft">
         {sinDatos
           ? (vacioAccion ?? "Sin REBA calculado: completa el análisis o corrige ángulos pendientes.")
+          : estimado
+            ? textoEstimado(inicial, residual, rangoI, rangoR)
           : cmp.reduccion != null && cmp.reduccion > 0
             ? `Reducción proyectada: −${cmp.reduccion} pts${cmp.reduccionPct != null ? ` (${cmp.reduccionPct} %)` : ""}${cmp.mejoraNivel ? ` · ${cmp.inicial.nivel} → ${cmp.residual.nivel}` : ""}.`
             : cmp.reduccion === 0
@@ -92,14 +102,14 @@ export function ComparadorResidual({
                 min={1}
                 max={15}
                 step={1}
-                value={residual ?? inicial ?? 1}
+                value={residual ?? rangoR?.max ?? inicial ?? rangoI?.max ?? 1}
                 onChange={(e) => onAjustar(Number(e.target.value))}
                 className="slider-reba mt-3"
                 aria-valuemin={1}
                 aria-valuemax={15}
-                aria-valuenow={residual ?? inicial ?? 1}
+                aria-valuenow={residual ?? rangoR?.max ?? inicial ?? rangoI?.max ?? 1}
               />
-              <span className="t-num mt-2 block text-[20px] text-jabil">{residual ?? "—"}</span>
+              <span className="t-num mt-2 block text-[20px] text-jabil">{residual ?? (rangoR ? textoRango(rangoR) : "—")}</span>
             </label>
           )}
         </div>
@@ -108,24 +118,50 @@ export function ComparadorResidual({
   )
 }
 
-function Columna({ titulo, puntaje, nivel, color, accion, max, reducir, destacado, compacto }: {
-  titulo: string; puntaje: number | null; nivel: string | null; color: string; accion: string; max: number; reducir: boolean; destacado?: boolean; compacto?: boolean
+/** Pie del comparador cuando al menos un lado es un rango: no se resta un rango de otro. */
+function textoEstimado(inicial: number | null, residual: number | null, rangoI: RangoReba | null, rangoR: RangoReba | null): string {
+  const lado = (valor: number | null, rango: RangoReba | null) => (rango ? `entre ${rango.min} y ${rango.max}` : `en ${valor ?? "—"}`)
+  const nivelI = rangoI ? rangoI.nivel : null
+  const nivelR = rangoR ? rangoR.nivel : null
+  const base = `Falta un dato: el inicial queda ${lado(inicial, rangoI)} y el residual ${lado(residual, rangoR)}.`
+  if (rangoI && !rangoI.nivel) return `${base} Completa el dato en Postura medida para fijar el nivel.`
+  return nivelI && nivelR && nivelI !== nivelR ? `${base} Nivel ${nivelI} → ${nivelR} en cualquier caso.` : base
+}
+
+function Columna({ titulo, puntaje, nivel, color, accion, rango, max, reducir, destacado, compacto }: {
+  titulo: string; puntaje: number | null; nivel: string | null; color: string; accion: string; rango?: RangoReba | null
+  max: number; reducir: boolean; destacado?: boolean; compacto?: boolean
 }) {
-  const ancho = puntaje == null ? 0 : (puntaje / max) * 100
+  const tono = rango ? colorRiesgo(rango.nivel) : color
+  const etiqueta = rango ? (rango.nivel ? `${rango.nivel}, estimado` : "Nivel por confirmar") : nivel ?? "Pendiente de cálculo"
+  const detalle = rango ? "Falta un dato para el valor exacto" : puntaje == null ? "Completa el análisis" : accion
+  const firme = ((rango ? rango.min : puntaje ?? 0) / max) * 100
+  const posible = rango ? ((rango.max - rango.min) / max) * 100 : 0
   return (
     <div className={cn("rounded-lg border", compacto ? "p-3" : "p-4", destacado ? "border-jabil/30 bg-jabil/[0.04]" : "border-rule-soft bg-slate-50")}>
       <p className="text-[12px] font-medium text-graphite">{titulo}</p>
-      <p className={cn("t-num leading-none", compacto ? "mt-1 text-[28px]" : "mt-1 text-[36px]")} style={{ color }}>{puntaje ?? "—"}</p>
-      <p className="mt-1 text-[13px] font-semibold" style={{ color }}>{nivel ?? "Pendiente de cálculo"}</p>
-      {!compacto && <p className="text-[12px] text-graphite">{puntaje == null ? "Completa el análisis" : accion}</p>}
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+      <p className={cn("t-num leading-none", compacto ? "mt-1 text-[28px]" : "mt-1 text-[36px]")} style={{ color: tono }}>
+        {rango ? textoRango(rango) : puntaje ?? "—"}
+      </p>
+      <p className="mt-1 text-[13px] font-semibold" style={{ color: tono }}>{etiqueta}</p>
+      {!compacto && <p className="text-[12px] text-graphite">{detalle}</p>}
+      <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-white" title={rango ? `Entre ${rango.min} y ${rango.max}` : undefined}>
         <motion.div
-          className="h-full rounded-full"
-          style={{ background: color }}
+          className="h-full"
+          style={{ background: tono }}
           initial={reducir ? false : { width: 0 }}
-          animate={{ width: `${ancho}%` }}
+          animate={{ width: `${firme}%` }}
           transition={{ duration: 0.7, ease: "easeOut" }}
         />
+        {rango && (
+          <motion.div
+            className="h-full opacity-40"
+            style={{ background: tono }}
+            initial={reducir ? false : { width: 0 }}
+            animate={{ width: `${posible}%` }}
+            transition={{ duration: 0.7, ease: "easeOut", delay: reducir ? 0 : 0.2 }}
+          />
+        )}
       </div>
     </div>
   )

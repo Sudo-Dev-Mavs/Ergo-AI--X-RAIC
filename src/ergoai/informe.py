@@ -54,6 +54,18 @@ def _insignia(nivel: str | None, puntaje: Any, rango: dict[str, Any] | None = No
     return f'<span class="insignia" style="background:{color}">REBA {escape(str(puntaje if puntaje is not None else "—"))} · {escape(nivel or "Pendiente")}</span>'
 
 
+def _cifra_riesgo(resumen: dict[str, Any]) -> str:
+    """«<b>6</b> (Medio)» o, si falta un dato, «<b>4–6</b> (Medio, estimado)»."""
+
+    rango = resumen.get("rango")
+    if resumen.get("reba") is None and rango:
+        texto = f"{rango['min']}–{rango['max']}" if rango["min"] != rango["max"] else str(rango["min"])
+        nivel = f"{rango['nivel']}, estimado" if rango.get("nivel") else "nivel por confirmar"
+        return f"<b>{escape(texto)}</b> ({escape(nivel)})"
+    valor = resumen.get("reba")
+    return f"<b>{escape(str(valor if valor is not None else '—'))}</b> ({escape(resumen.get('nivel_riesgo') or 'pendiente')})"
+
+
 def _nota_rango(rango: dict[str, Any] | None, pendientes: list[dict[str, Any]]) -> str:
     if not rango:
         return ""
@@ -178,6 +190,8 @@ def generar_informe(carpeta: Path, config: RebaConfig) -> Path:
     reba = resultado.get("reba", {})
     aprobado = validacion.get("estado_informe") == "aprobado"
     ini, res = residual["inicial"], residual["residual"]
+    especialista = (f", fijado por el especialista (el agente estimaba {_cifra_riesgo(residual['residual_agente'])})"
+                    if residual.get("origen_residual") == "especialista" and residual.get("residual_agente") else "")
     reduccion = residual.get("reduccion_puntos")
     tiempo = (resultado.get("tiempos_s") or {}).get("analisis_total")
     minutos_validacion = _minutos_validacion(validacion)
@@ -253,7 +267,7 @@ Resultado: {_insignia(reba.get('nivel_riesgo'), reba.get('final', {}).get('repor
 {_tabla_recomendaciones(validacion['recomendaciones'], aprobado)}
 
 <h2>5. Riesgo residual</h2>
-<p>REBA inicial <b>{ini['reba'] if ini['reba'] is not None else '—'}</b> ({escape(ini['nivel_riesgo'] or 'pendiente')}) → residual esperado <b>{res['reba'] if res['reba'] is not None else '—'}</b> ({escape(res['nivel_riesgo'] or 'pendiente')}),
+<p>REBA inicial {_cifra_riesgo(ini)} → residual esperado {_cifra_riesgo(res)}{especialista},
 recalculado con el mismo método REBA aplicando los controles vigentes: {escape(', '.join(residual['recomendaciones_aplicadas']) or 'ninguno')}.</p>
 {_tabla_bandas(residual)}
 <p class="nota">{escape(residual['nota'])} Las medidas administrativas no se cuentan en el residual.</p>
