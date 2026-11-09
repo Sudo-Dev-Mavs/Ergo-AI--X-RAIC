@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from .angulos import MedicionAngulo, _banderas, _mapa, _punto, construir_vectores, corregir_inclinacion_camara
+from .angulos import MedicionAngulo, _banderas, _mapa, construir_vectores, corregir_inclinacion_camara
 from .config import Configuracion
 from .geometria import angulo_entre
 from .modelos import VistaPose, WorldLandmark
@@ -186,16 +186,18 @@ def completar_con_respaldos(medidas: list[MedicionAngulo], vistas: dict[str, Vis
         return nueva(medida, lado, valor, c.vista, metodo, c.confianza(*indices), extra)
 
     def apoyo() -> MedicionAngulo | None:
-        vista = corregidas.get("costado")
-        if vista is not None:
-            mapa = _mapa(vista.landmarks, vis_min)
-            tobillo_l, tobillo_r, cadera, rodilla = _punto(mapa, 27), _punto(mapa, 28), _punto(mapa, 23) or _punto(mapa, 24), _punto(mapa, 25) or _punto(mapa, 26)
-            if tobillo_l and tobillo_r and cadera and rodilla:
-                largo = abs(cadera[1] - rodilla[1]) + abs(rodilla[1] - tobillo_l[1])
-                if largo:
-                    valor = float(abs(tobillo_l[1] - tobillo_r[1]) > config.angulos.umbral_pie_levantado * largo)
-                    confianza = min(mapa[i].visibility for i in (27, 28))
-                    return nueva("apoyo_piernas_unilateral", None, valor, "costado", "respaldo 2D de costado: altura de tobillos", confianza, [])
+        # Altura de los tobillos en la pose 3D (metros, eje y vertical de la cámara). No se usa la foto de
+        # costado en 2D: por perspectiva, el pie más alejado de la cámara aparece más arriba aunque esté apoyado.
+        if cuerpo is not None:
+            m = cuerpo.mapa
+            lados = [(23, 25, 27), (24, 26, 28)]
+            if all(i in m for i in (27, 28)) and any(all(i in m for i in t) for t in lados):
+                cadera, rodilla, tobillo = next(t for t in lados if all(i in m for i in t))
+                largo = abs(m[cadera].y - m[rodilla].y) + abs(m[rodilla].y - m[tobillo].y)
+                if largo > 1e-6:
+                    valor = float(abs(m[27].y - m[28].y) > config.angulos.umbral_pie_levantado * largo)
+                    return nueva("apoyo_piernas_unilateral", None, valor, cuerpo.vista,
+                                 "respaldo 3D (pose de " + cuerpo.vista + "): altura de tobillos", cuerpo.confianza(27, 28), [])
         if contexto.get("postura") == "sentado":
             return MedicionAngulo("apoyo_piernas_unilateral", None, 0.0, "contexto", "respaldo: postura sentado declarada", None,
                                   banderas=["vista_respaldo"])

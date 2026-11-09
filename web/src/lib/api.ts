@@ -14,6 +14,8 @@ export interface ResumenCaso {
   nivel_accion: number | null
   residual: number | null
   nivel_residual: string | null
+  reba_rango?: RangoReba | null
+  residual_rango?: RangoReba | null
   por_validar: number
   recomendaciones: number
   estado_informe: "borrador" | "aprobado"
@@ -63,10 +65,19 @@ export interface Angulo {
   clave_override: string
 }
 
+/** Puntajes REBA posibles cuando falta un dato; `nivel` solo si todo el rango cae en el mismo nivel. */
+export interface RangoReba {
+  min: number
+  max: number
+  nivel: string | null
+  nivel_accion: number | null
+}
+
 export interface ResumenRiesgo {
   reba: number | null
   nivel_riesgo: string | null
   nivel_accion: number | null
+  rango?: RangoReba | null
   bandas: Record<string, number | null>
 }
 
@@ -79,7 +90,7 @@ export interface EstadoCaso {
       grupo_a: Record<string, number | null>
       grupo_b: Record<"L" | "R", Record<string, number | null>>
       actividad: number
-      final: { L: number | null; R: number | null; reportado: number | null; lado: "L" | "R" | null }
+      final: { L: number | null; R: number | null; reportado: number | null; lado: "L" | "R" | null; rango?: RangoReba | null }
       nivel_riesgo: string | null
       nivel_accion: number | null
     }

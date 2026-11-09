@@ -1,4 +1,4 @@
-import type { Jerarquia, TipoTarea } from "./api"
+import type { Jerarquia, RangoReba, TipoTarea } from "./api"
 
 /** Zonas REBA (Hignett y McAtamney, 2000). El color solo se usa para riesgo. */
 export const ZONAS = [
@@ -79,4 +79,9 @@ export function fechaCorta(iso: string | null | undefined): string {
   const fecha = new Date(iso)
   if (Number.isNaN(fecha.getTime())) return iso
   return fecha.toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+}
+
+/** «5–7» o «6» para un rango REBA. */
+export function textoRango(rango: RangoReba): string {
+  return rango.min === rango.max ? String(rango.min) : `${rango.min}–${rango.max}`
 }

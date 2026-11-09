@@ -99,7 +99,11 @@ def generar_recomendaciones(
     """Aplica las reglas y devuelve recomendaciones ordenadas por jerarquía de control."""
 
     recs: list[Recomendacion] = []
-    prioridad = _prioridad(reba.get("nivel_accion"))
+    # Si el puntaje está pendiente pero todo su rango cae en un nivel, ese nivel ya sirve para priorizar.
+    nivel_conocido = reba.get("nivel_accion")
+    if nivel_conocido is None:
+        nivel_conocido = ((reba.get("final") or {}).get("rango") or {}).get("nivel_accion")
+    prioridad = _prioridad(nivel_conocido)
     tipo_tarea = contexto.get("tipo_tarea") or "otro"
     tipo_trabajo = contexto.get("tipo_trabajo") if contexto.get("tipo_trabajo") in TIPOS_TRABAJO else None
     sentado = contexto.get("postura") == "sentado"
@@ -193,13 +197,28 @@ def generar_recomendaciones(
             {"mediciones": {"tronco_torsion": 0.0, "tronco_inclinacion_lateral": 0.0}},
         )
     cuello, cuello_lat = mediciones.get("cuello_flexion"), mediciones.get("cuello_inclinacion_rotacion")
-    if (cuello is not None and (cuello > config.cuello.flexion or cuello < -config.tolerancia_neutro_deg)) or (cuello_lat is not None and cuello_lat > config.umbral_cuello_lateral_rotacion_deg):
-        texto = f"Cuello en {'extensión' if cuello is not None and cuello < 0 else 'flexión'} de {abs(cuello):.0f}°" if cuello is not None else "Cuello con giro/inclinación lateral"
+    flexion = cuello is not None and cuello > config.cuello.flexion
+    extension = cuello is not None and cuello < -config.tolerancia_neutro_deg
+    giro = cuello_lat is not None and cuello_lat > config.umbral_cuello_lateral_rotacion_deg
+    if flexion or extension or giro:
+        causas = []
+        if flexion:
+            causas.append(f"flexión de {cuello:.0f}° (más de {config.cuello.flexion:g}°)")
+        if extension:
+            causas.append(f"extensión de {abs(cuello):.0f}°")
+        if giro:
+            causas.append(f"giro o inclinación lateral de {cuello_lat:.0f}° (más de {config.umbral_cuello_lateral_rotacion_deg:g}°)")
+        solucion = []
+        if flexion or extension:
+            solucion.append("Acercar la pieza a la línea de visión con un posicionador o soporte inclinable; colocar ayudas visuales "
+                            "a 1,400–1,600 mm y asegurar iluminación adecuada a la actividad (500 lx ensamble, 750 lx precisión).")
+        if giro:
+            solucion.append("Colocar la pieza, la herramienta y las ayudas visuales al frente del operador para que no tenga que "
+                            "girar ni inclinar la cabeza hacia un lado.")
         agregar(
             "R-CUELLO-RED", "cuello",
-            f"{texto} (REBA > {config.cuello.flexion:g}° o con giro lateral).",
-            "Acercar la pieza a la línea de visión con un posicionador o soporte inclinable; colocar ayudas visuales "
-            "a 1,400–1,600 mm y asegurar iluminación adecuada a la actividad (500 lx ensamble, 750 lx precisión).",
+            f"Cuello con {' y '.join(causas)}.",
+            " ".join(solucion),
             "rediseno", ["f00014_f", "f00014_g", "reba"],
             {"mediciones": {"cuello_flexion": 10.0, "cuello_inclinacion_rotacion": 0.0}},
         )
@@ -292,7 +311,7 @@ def generar_recomendaciones(
             "rediseno", ["nom_ap1", "reba"],
             {"contexto": {"actividad.cambios_bruscos_o_base_inestable": False}},
         )
-    if actividad.get("estatica_mas_1min") or (contexto.get("postura") == "de_pie" and reba.get("nivel_accion", 0) and reba["nivel_accion"] >= 2):
+    if actividad.get("estatica_mas_1min") or (contexto.get("postura") == "de_pie" and (nivel_conocido or 0) >= 2):
         agregar(
             "R-SILLA-RED", "postura",
             "Postura mantenida (estática o de pie prolongado).",
@@ -302,7 +321,7 @@ def generar_recomendaciones(
             "rediseno", ["jabil_silla", "f00014_b"],
         )
 
-    nivel = reba.get("nivel_accion")
+    nivel = nivel_conocido
     if (nivel is not None and nivel >= 2) or tipo_tarea != "otro":
         agregar(
             "R-CAPAC-ADM", "general",

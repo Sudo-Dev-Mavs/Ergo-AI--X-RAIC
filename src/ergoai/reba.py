@@ -54,7 +54,7 @@ class ResultadoReba:
     grupo_b: dict[str, dict[str, int | None]]
     tabla_c: dict[str, int | None]
     actividad: int
-    final: dict[str, int | str | None]
+    final: dict[str, Any]
     nivel_riesgo: str | None
     nivel_accion: int | None
     pendientes_manuales: list[dict[str, str]] = field(default_factory=list)
@@ -269,6 +269,7 @@ def calcular_reba(mediciones: dict[str, float | None], contexto: dict[str, Any],
     if agarre is None:
         pendientes.append({"medida": "agarre", "motivo": "agarre ausente o inválido"})
     hombros = contexto.get("hombro_elevado", {})
+    crudos: dict[str, dict[str, Any]] = {}
     apoyos = contexto.get("brazo_apoyado", {})
     desviaciones = contexto.get("muneca_desviada_o_torcida", {})
     for lado, letra in (("izquierdo", "L"), ("derecho", "R")):
@@ -286,6 +287,8 @@ def calcular_reba(mediciones: dict[str, float | None], contexto: dict[str, Any],
         tabla_b = puntaje_tabla_b(brazo, antebrazo, muneca) if None not in (brazo, antebrazo, muneca) else None
         puntaje_b = tabla_b + agarre if tabla_b is not None and agarre is not None else None
         grupo_b[letra] = {"brazo": brazo, "antebrazo": antebrazo, "muneca": muneca, "tabla_b": tabla_b, "agarre": agarre, "puntaje_b": puntaje_b}
+        crudos[letra] = {"brazo_v": brazo_v, "abduccion": abduccion, "elevado": elevado, "apoyado": bool(apoyado),
+                         "antebrazo": antebrazo, "muneca_v": muneca_v, "desviada": desviada}
         tabla_c[letra] = puntaje_tabla_c(puntaje_a, puntaje_b) if puntaje_a is not None and puntaje_b is not None else None
         finales[letra] = tabla_c[letra] + puntaje_actividad(contexto.get("actividad")) if tabla_c[letra] is not None else None
 
@@ -302,4 +305,70 @@ def calcular_reba(mediciones: dict[str, float | None], contexto: dict[str, Any],
     reportado = finales[lado] if lado is not None else None
     nivel = nivel_riesgo(reportado) if reportado is not None else None
     grupo_a = {"tronco": tronco, "cuello": cuello, "piernas": piernas, "tabla_a": tabla_a, "carga": carga, "puntaje_a": puntaje_a}
-    return ResultadoReba(grupo_a, grupo_b, tabla_c, actividad, {"L": finales["L"], "R": finales["R"], "reportado": reportado, "lado": lado}, nivel.nombre if nivel else None, nivel.nivel_accion if nivel else None, pendientes)
+    rango = None
+    if reportado is None:
+        rango = _rango_reba(
+            tronco_v, torsion, lateral, cuello_v, cuello_lateral, piernas, sentado, carga, agarre, crudos, actividad,
+            {"izquierdo": "L", "derecho": "R"}.get(lado_configurado), config,
+        )
+    final = {"L": finales["L"], "R": finales["R"], "reportado": reportado, "lado": lado, "rango": rango}
+    return ResultadoReba(grupo_a, grupo_b, tabla_c, actividad, final, nivel.nombre if nivel else None, nivel.nivel_accion if nivel else None, pendientes)
+
+
+def _opciones_ajuste(base: int, faltantes: int, maximo: int) -> set[int]:
+    """La banda medida más los puntos que podría sumar cada ajuste todavía no declarado."""
+
+    return {min(maximo, base + extra) for extra in range(faltantes + 1)}
+
+
+def _rango_reba(
+    tronco_v: float | None, torsion: float | None, lateral: float | None, cuello_v: float | None, cuello_lateral: float | None,
+    piernas: int | None, sentado: bool, carga: int | None, agarre: int | None, crudos: dict[str, dict[str, Any]],
+    actividad: int, lado_fijo: str | None, config: RebaConfig,
+) -> dict[str, Any] | None:
+    """Puntajes REBA posibles cuando falta algún dato: recorre todos los valores que podría tomar lo que falta.
+
+    No sustituye al puntaje (que sigue pendiente): acota el resultado y, si todo el rango cae en un mismo nivel de
+    riesgo, ese nivel ya está determinado.
+    """
+
+    if tronco_v is None:
+        troncos = set(range(1, 6))
+    else:
+        medido = banda_tronco(tronco_v, torsion, lateral, config)
+        aplicado = medido > banda_tronco(tronco_v, None, None, config)
+        troncos = _opciones_ajuste(medido, int(not aplicado and (torsion is None or lateral is None)), 5)
+    if cuello_v is None:
+        cuellos = {1, 2, 3}
+    else:
+        medido = banda_cuello(cuello_v, cuello_lateral, config)
+        cuellos = _opciones_ajuste(medido, int(cuello_lateral is None), 3)
+    piernas_ops = {piernas} if piernas is not None else ({1} if sentado else {1, 2, 3, 4})
+    cargas = {carga} if carga is not None else {0, 1, 2, 3}
+    agarres = {agarre} if agarre is not None else {0, 1, 2, 3}
+    puntajes_a = {puntaje_tabla_a(t, c, p) + k for t in troncos for c in cuellos for p in piernas_ops for k in cargas}
+
+    extremos: dict[str, tuple[int, int]] = {}
+    for letra, d in crudos.items():
+        if d["brazo_v"] is None:
+            brazos = set(range(1, 7))
+        else:
+            base = banda_brazo(d["brazo_v"], d["abduccion"], bool(d["elevado"]), d["apoyado"], config)
+            brazos = _opciones_ajuste(base, int(d["abduccion"] is None) + int(d["elevado"] is None), 6)
+        antebrazos = {d["antebrazo"]} if d["antebrazo"] is not None else {1, 2}
+        if d["muneca_v"] is None:
+            munecas = {1, 2, 3}
+        else:
+            munecas = _opciones_ajuste(banda_muneca(d["muneca_v"], bool(d["desviada"]), config), int(d["desviada"] is None), 3)
+        puntajes_b = {puntaje_tabla_b(b, a, m) + g for b in brazos for a in antebrazos for m in munecas for g in agarres}
+        finales = {puntaje_tabla_c(pa, pb) + actividad for pa in puntajes_a for pb in puntajes_b}
+        extremos[letra] = (min(finales), max(finales))
+    if not extremos:
+        return None
+    if lado_fijo in extremos:
+        minimo, maximo = extremos[lado_fijo]
+    else:  # se reporta el peor lado: el mínimo posible es el mayor de los mínimos
+        minimo, maximo = max(e[0] for e in extremos.values()), max(e[1] for e in extremos.values())
+    bajo, alto = nivel_riesgo(minimo), nivel_riesgo(maximo)
+    mismo = bajo.nombre == alto.nombre
+    return {"min": minimo, "max": maximo, "nivel": bajo.nombre if mismo else None, "nivel_accion": bajo.nivel_accion if mismo else None}

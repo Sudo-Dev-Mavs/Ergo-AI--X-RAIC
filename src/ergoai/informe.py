@@ -37,9 +37,26 @@ def cargar_estado(carpeta: Path, config: RebaConfig) -> dict[str, Any]:
     return {"resultado": resultado, "validacion": validacion, "residual": residual}
 
 
-def _insignia(nivel: str | None, puntaje: Any) -> str:
+def _insignia(nivel: str | None, puntaje: Any, rango: dict[str, Any] | None = None) -> str:
+    """Puntaje y nivel; si el puntaje está pendiente, el rango posible y su nivel (marcado como estimado)."""
+
+    if puntaje is None and rango:
+        texto_puntaje = f"{rango['min']}–{rango['max']}" if rango["min"] != rango["max"] else str(rango["min"])
+        nivel_rango = rango.get("nivel")
+        color = COLOR_RIESGO.get(nivel_rango, "#888")
+        etiqueta = f"{nivel_rango}, estimado" if nivel_rango else "pendiente"
+        return f'<span class="insignia" style="background:{color}">REBA {escape(texto_puntaje)} · {escape(etiqueta)}</span>'
     color = COLOR_RIESGO.get(nivel, "#888")
     return f'<span class="insignia" style="background:{color}">REBA {escape(str(puntaje if puntaje is not None else "—"))} · {escape(nivel or "Pendiente")}</span>'
+
+
+def _nota_rango(rango: dict[str, Any] | None, pendientes: list[dict[str, Any]]) -> str:
+    if not rango:
+        return ""
+    faltan = ", ".join(sorted({p.get("medida", "") for p in pendientes if p.get("medida")}))
+    nivel = f"el nivel de riesgo ya es <b>{escape(rango['nivel'])}</b> en cualquier caso" if rango.get("nivel") else "el nivel todavía puede cambiar"
+    return (f"<p class='aviso'>El puntaje REBA está pendiente porque faltan datos ({escape(faltan)}). Con los valores posibles de lo que falta, "
+            f"el REBA queda entre <b>{rango['min']}</b> y <b>{rango['max']}</b>: {nivel}. Completa la medida en «Postura medida» para cerrar el puntaje.</p>")
 
 
 def _imagenes(carpeta: Path) -> str:
@@ -205,8 +222,8 @@ figcaption {{ font-size:.8rem; color:var(--suave); }}
 <p class="sub">ErgoAI · método REBA con recomendaciones basadas en la NOM-036-1-STPS-2018 y lineamientos Jabil · procesado localmente</p>
 {sello}
 <section class="tarjetas">
-  <div class="tarjeta"><div class="titulo">Riesgo inicial</div><div class="valor">{_insignia(ini['nivel_riesgo'], ini['reba'])}</div><div class="chico">Nivel de acción {ini['nivel_accion'] if ini['nivel_accion'] is not None else '—'}</div></div>
-  <div class="tarjeta"><div class="titulo">Riesgo residual esperado</div><div class="valor">{_insignia(res['nivel_riesgo'], res['reba'])}</div><div class="chico">con {len(residual['recomendaciones_aplicadas'])} {'control vigente' if len(residual['recomendaciones_aplicadas']) == 1 else 'controles vigentes'}</div></div>
+  <div class="tarjeta"><div class="titulo">Riesgo inicial</div><div class="valor">{_insignia(ini['nivel_riesgo'], ini['reba'], ini.get('rango'))}</div><div class="chico">Nivel de acción {ini['nivel_accion'] if ini['nivel_accion'] is not None else '—'}</div></div>
+  <div class="tarjeta"><div class="titulo">Riesgo residual esperado</div><div class="valor">{_insignia(res['nivel_riesgo'], res['reba'], res.get('rango'))}</div><div class="chico">con {len(residual['recomendaciones_aplicadas'])} {'control vigente' if len(residual['recomendaciones_aplicadas']) == 1 else 'controles vigentes'}</div></div>
   <div class="tarjeta"><div class="titulo">Reducción</div><div class="valor">{'—' if reduccion is None else f"{'−' if reduccion > 0 else ''}{reduccion} pts ({residual['reduccion_pct']} %)"}</div></div>
   <div class="tarjeta"><div class="titulo">Tiempo del agente</div><div class="valor">{'—' if tiempo is None else f'{tiempo:.1f} s'}</div><div class="chico">{'Validación humana: ' + str(minutos_validacion) + ' min' if minutos_validacion is not None else 'análisis + borrador del informe'}</div></div>
 </section>
@@ -221,7 +238,8 @@ figcaption {{ font-size:.8rem; color:var(--suave); }}
 <h2>3. Puntuación REBA</h2>
 <p>Grupo A (tronco {reba.get('grupo_a', {}).get('tronco')}, cuello {reba.get('grupo_a', {}).get('cuello')}, piernas {reba.get('grupo_a', {}).get('piernas')}) → Tabla A {reba.get('grupo_a', {}).get('tabla_a')} + carga {reba.get('grupo_a', {}).get('carga')} = <b>{reba.get('grupo_a', {}).get('puntaje_a')}</b>.
 Lado reportado: {escape(str(reba.get('final', {}).get('lado')))} (izq. {reba.get('final', {}).get('L')}, der. {reba.get('final', {}).get('R')}); actividad +{reba.get('actividad')}.
-Resultado: {_insignia(reba.get('nivel_riesgo'), reba.get('final', {}).get('reportado'))}</p>
+Resultado: {_insignia(reba.get('nivel_riesgo'), reba.get('final', {}).get('reportado'), reba.get('final', {}).get('rango'))}</p>
+{_nota_rango(reba.get('final', {}).get('rango'), pendientes)}
 {('<p class="aviso">Datos pendientes de revisión manual: ' + escape(', '.join(sorted({p.get('medida', '') for p in pendientes}))) + '</p>') if pendientes else ''}
 
 <h2>4. Recomendaciones jerarquizadas</h2>

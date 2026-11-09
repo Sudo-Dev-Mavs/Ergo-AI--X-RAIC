@@ -62,6 +62,7 @@ def cuenta_para_residual(rec: dict[str, Any]) -> bool:
 def _resumen(reba: dict[str, Any]) -> dict[str, Any]:
     return {
         "reba": reba["final"]["reportado"], "nivel_riesgo": reba["nivel_riesgo"], "nivel_accion": reba["nivel_accion"],
+        "rango": reba["final"].get("rango"),
         "bandas": {**{k: reba["grupo_a"][k] for k in ("tronco", "cuello", "piernas", "carga")},
                    **{f"{k}_{lado}": reba["grupo_b"][lado][k] for lado in ("L", "R") for k in ("brazo", "antebrazo", "muneca", "agarre")},
                    "actividad": reba["actividad"]},

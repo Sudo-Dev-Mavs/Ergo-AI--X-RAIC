@@ -9,7 +9,7 @@ import { PanelRecomendaciones } from "@/components/ergo/recomendaciones"
 import { GridPattern } from "@/components/magicui/grid-pattern"
 import { api, type EstadoCaso, type Vista } from "@/lib/api"
 import { avisar, useEspecialista } from "@/lib/app"
-import { accionRiesgo, colorRiesgo, etiquetaTarea, fechaCorta } from "@/lib/dominio"
+import { accionRiesgo, colorRiesgo, etiquetaTarea, fechaCorta, textoRango } from "@/lib/dominio"
 import { useDatos } from "@/lib/useDatos"
 import { cn } from "@/lib/utils"
 
@@ -104,10 +104,19 @@ export function CasoPage({ id }: { id: string }) {
         <div className="flex flex-col">
           <Goniometro inicial={reba.final.reportado} residual={residual.residual.reba} nivel={reba.nivel_riesgo} nivelResidual={residual.residual.nivel_riesgo} tamano={340} className="mx-auto" />
           <p className="text-center text-[15px] text-ink-soft">
-            {reba.nivel_riesgo ? `Acción ${accionRiesgo(reba.nivel_riesgo).toLowerCase()}` : "Faltan datos para el REBA: revisa la pestaña Postura medida."}
+            {reba.nivel_riesgo
+              ? `Acción ${accionRiesgo(reba.nivel_riesgo).toLowerCase()}`
+              : reba.final.rango
+                ? `Falta un dato: el REBA queda entre ${reba.final.rango.min} y ${reba.final.rango.max}${reba.final.rango.nivel ? `, nivel ${reba.final.rango.nivel.toLowerCase()} en cualquier caso` : ""}. Complétalo en Postura medida.`
+                : "Faltan datos para el REBA: revisa la pestaña Postura medida."}
           </p>
           <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border border-rule bg-rule">
-            <Cifra titulo="Residual esperado" valor={residual.residual.reba} nota={residual.residual.nivel_riesgo ?? "Pendiente"} color={colorRiesgo(residual.residual.nivel_riesgo)} />
+            {residual.residual.reba == null && residual.residual.rango ? (
+              <Cifra titulo="Residual esperado" valor={textoRango(residual.residual.rango)}
+                nota={residual.residual.rango.nivel ? `${residual.residual.rango.nivel}, estimado` : "Rango estimado"} color={colorRiesgo(residual.residual.rango.nivel)} />
+            ) : (
+              <Cifra titulo="Residual esperado" valor={residual.residual.reba} nota={residual.residual.nivel_riesgo ?? "Pendiente"} color={colorRiesgo(residual.residual.nivel_riesgo)} />
+            )}
             <Cifra titulo="Reducción" valor={residual.reduccion_puntos == null ? null : residual.reduccion_puntos > 0 ? `−${residual.reduccion_puntos}` : "0"}
               nota={residual.reduccion_pct == null ? "Sin datos suficientes"
                 : `${residual.reduccion_pct} % con ${residual.recomendaciones_aplicadas.length} ${residual.recomendaciones_aplicadas.length === 1 ? "control" : "controles"}`} />

@@ -4,7 +4,7 @@ import { BlurFade } from "@/components/magicui/blur-fade"
 import { ReglaRiesgo } from "@/components/ergo/regla-riesgo"
 import { api, type ResumenCaso } from "@/lib/api"
 import { ir } from "@/lib/app"
-import { colorRiesgo, etiquetaTarea, fechaCorta } from "@/lib/dominio"
+import { colorRiesgo, etiquetaTarea, fechaCorta, textoRango } from "@/lib/dominio"
 import { useDatos } from "@/lib/useDatos"
 import { cn } from "@/lib/utils"
 
@@ -99,7 +99,7 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="size-2.5 shrink-0 rounded-full" style={{ background: colorRiesgo(caso.nivel_riesgo) }} aria-hidden />
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: colorRiesgo(caso.nivel_riesgo ?? caso.reba_rango?.nivel) }} aria-hidden />
               <span className="t-title truncate text-[16px] group-hover:underline group-hover:underline-offset-4">{caso.caso_id}</span>
             </div>
             <p className="mt-0.5 truncate pl-[18px] text-[13px] text-graphite">
@@ -107,8 +107,17 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
             </p>
           </div>
           <div className="shrink-0 text-right">
-            <span className="t-num block text-[28px] leading-none" style={{ color: colorRiesgo(caso.nivel_riesgo) }}>{caso.reba ?? "—"}</span>
-            <span className="text-[12px] text-graphite">{caso.nivel_riesgo ?? "Pendiente"}</span>
+            {caso.reba == null && caso.reba_rango ? (
+              <>
+                <span className="t-num block text-[28px] leading-none" style={{ color: colorRiesgo(caso.reba_rango.nivel) }}>{textoRango(caso.reba_rango)}</span>
+                <span className="text-[12px] text-graphite">{caso.reba_rango.nivel ? `${caso.reba_rango.nivel}, estimado` : "Pendiente"}</span>
+              </>
+            ) : (
+              <>
+                <span className="t-num block text-[28px] leading-none" style={{ color: colorRiesgo(caso.nivel_riesgo) }}>{caso.reba ?? "—"}</span>
+                <span className="text-[12px] text-graphite">{caso.nivel_riesgo ?? "Pendiente"}</span>
+              </>
+            )}
           </div>
         </div>
         <ReglaRiesgo className="mt-2" inicial={caso.reba} residual={caso.residual} nivel={caso.nivel_riesgo} nivelResidual={caso.nivel_residual} />
@@ -116,7 +125,7 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
           <span className="text-graphite">
             {caso.residual != null && caso.reba != null
               ? caso.residual < caso.reba ? `Residual ${caso.residual} (${caso.nivel_residual})` : "Sin reducción"
-              : "Residual pendiente"}
+              : caso.residual_rango ? `Residual ${textoRango(caso.residual_rango)}, estimado` : "Residual pendiente"}
           </span>
           <span className="flex items-center gap-2">
             {caso.por_validar > 0 && (
