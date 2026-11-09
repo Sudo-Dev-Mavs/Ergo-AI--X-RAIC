@@ -29,6 +29,8 @@ NOMBRE_CORTO = {
 LADO = {"L": " izq.", "R": " der."}
 # Por lado: hombro, codo, muñeca, (meñique, índice), cadera, rodilla, tobillo
 INDICES = {"L": (11, 13, 15, (17, 19), 23, 25, 27), "R": (12, 14, 16, (18, 20), 24, 26, 28)}
+# Umbral más permisivo solo al dibujar (cenital / escorzo): no afecta la medición REBA.
+VIS_DIBUJO_MIN = 0.28
 
 
 def dibujar_esqueleto(image_rgb: np.ndarray, landmarks: list[Landmark], vis_min: float) -> np.ndarray:
@@ -75,6 +77,52 @@ def _punto(mapa: dict[int, Landmark], *indices: int) -> tuple[float, float] | No
     if not all(i in mapa for i in indices):
         return None
     return (sum(mapa[i].x_px for i in indices) / len(indices), sum(mapa[i].y_px for i in indices) / len(indices))
+
+
+def _bbox_cuerpo(mapa: dict[int, Landmark]) -> tuple[float, float, float, float] | None:
+    """Caja del torso/extremidades visibles (sin cara), para escalar etiquetas al sujeto."""
+
+    xs = [p.x_px for i, p in mapa.items() if i not in INDICES_CARA]
+    ys = [p.y_px for i, p in mapa.items() if i not in INDICES_CARA]
+    if len(xs) < 2:
+        return None
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _escala_etiquetas(ancho: int, alto: int, mapa: dict[int, Landmark], n_etiquetas: int) -> tuple[int, int, float]:
+    """Fuente/relleno/separación según tamaño de la persona, no solo de la foto.
+
+    Evita que en fotos chicas o con el sujeto lejos las cajas tapen el cuerpo
+    (como pasa al escalar solo con min(ancho, alto)).
+    """
+
+    escala_img = float(min(ancho, alto))
+    caja = _bbox_cuerpo(mapa)
+    if caja is not None:
+        alto_p = max(1.0, caja[3] - caja[1])
+        ancho_p = max(1.0, caja[2] - caja[0])
+        ref = max(alto_p, ancho_p * 0.65)
+        # Suelo: no usar un sujeto minúsculo como referencia (texto ilegible).
+        ref = max(ref, escala_img * 0.18)
+    else:
+        ref = escala_img * 0.42
+
+    tam = int(round(ref * 0.032))
+    tam = max(9, min(22, tam))
+    # Techo duro respecto a la imagen (fotos pequeñas / recortes).
+    tam = min(tam, max(9, int(round(escala_img * 0.022))))
+    if n_etiquetas >= 6:
+        tam = max(9, tam - 1)
+    if n_etiquetas >= 8:
+        tam = max(8, tam - 2)
+    if n_etiquetas >= 11:
+        tam = max(8, tam - 1)
+
+    relleno = max(2, int(round(tam * 0.22)))
+    # Más separación cuando hay muchas etiquetas → menos montón sobre el cuerpo.
+    factor_sep = 1.0 + min(0.8, max(0, n_etiquetas - 4) * 0.12)
+    separacion = max(ref * 0.045, tam * 1.4) * factor_sep
+    return tam, relleno, separacion
 
 
 def _segmentos(medida: "MedicionAngulo", mapa: dict[int, Landmark]) -> tuple[tuple[float, float] | None, list[tuple[tuple[float, float], tuple[float, float]]]]:
@@ -124,15 +172,103 @@ def _solapa(a: tuple[float, float, float, float], b: tuple[float, float, float, 
     return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
 
 
+def _dentro(caja: tuple[float, float, float, float], zona: tuple[float, float, float, float] | None) -> bool:
+    if zona is None:
+        return False
+    cx = (caja[0] + caja[2]) / 2
+    cy = (caja[1] + caja[3]) / 2
+    return zona[0] <= cx <= zona[2] and zona[1] <= cy <= zona[3]
+
+
+def _candidatos_caja(
+    ancla: tuple[float, float],
+    w: float,
+    h: float,
+    ancho: int,
+    alto: int,
+    separacion: float,
+    relleno: int,
+    centro_x: float,
+) -> list[tuple[float, float, float, float]]:
+    """Posiciones candidatas: ambos lados del ancla, arriba/abajo, con desplazamientos anti-solape."""
+
+    preferir_derecha = ancla[0] >= centro_x
+    lados = (1, -1) if preferir_derecha else (-1, 1)
+    candidatos: list[tuple[float, float, float, float]] = []
+    for radio in (1.0, 1.45, 1.9):
+        sep = separacion * radio
+        for signo in lados:
+            for intento in range(16):
+                desplazamiento = (intento + 1) // 2 * (h + relleno) * (1 if intento % 2 else -1)
+                if signo > 0:
+                    izq = ancla[0] + sep
+                else:
+                    izq = ancla[0] - sep - w
+                arriba = ancla[1] - h / 2 + desplazamiento
+                izq = min(max(izq, 0), max(0, ancho - w))
+                arriba = min(max(arriba, 0), max(0, alto - h))
+                candidatos.append((izq, arriba, izq + w, arriba + h))
+    # Arriba / abajo del ancla (útil cuando el cuerpo está apretado al centro).
+    for dy_signo in (-1, 1):
+        for radio in (1.0, 1.5):
+            izq = min(max(ancla[0] - w / 2, 0), max(0, ancho - w))
+            arriba = ancla[1] + dy_signo * (separacion * radio + h / 2) - h / 2
+            arriba = min(max(arriba, 0), max(0, alto - h))
+            candidatos.append((izq, arriba, izq + w, arriba + h))
+    return candidatos
+
+
+def _elegir_caja(
+    ancla: tuple[float, float] | None,
+    w: float,
+    h: float,
+    ancho: int,
+    alto: int,
+    separacion: float,
+    relleno: int,
+    centro_x: float,
+    ocupadas: list[tuple[float, float, float, float]],
+    zona_cuerpo: tuple[float, float, float, float] | None,
+    sin_ancla_y: float,
+) -> tuple[tuple[float, float, float, float], float]:
+    if ancla is None:
+        caja = (relleno * 2, sin_ancla_y, relleno * 2 + w, sin_ancla_y + h)
+        return caja, sin_ancla_y + h + relleno
+
+    mejor: tuple[float, float, float, float] | None = None
+    mejor_score = float("inf")
+    for caja in _candidatos_caja(ancla, w, h, ancho, alto, separacion, relleno, centro_x):
+        solapes = sum(1 for otra in ocupadas if _solapa(caja, otra))
+        tapa_cuerpo = 1 if _dentro(caja, zona_cuerpo) else 0
+        # Distancia al ancla: preferir cerca pero fuera del cuerpo.
+        cx, cy = (caja[0] + caja[2]) / 2, (caja[1] + caja[3]) / 2
+        dist = abs(cx - ancla[0]) + abs(cy - ancla[1])
+        score = solapes * 1000 + tapa_cuerpo * 80 + dist * 0.02
+        if score < mejor_score:
+            mejor_score = score
+            mejor = caja
+            if solapes == 0 and tapa_cuerpo == 0:
+                break
+    assert mejor is not None
+    return mejor, sin_ancla_y
+
+
 def anotar_angulos(image_rgb: np.ndarray, landmarks: list[Landmark], vis_min: float,
-                   medidas: Sequence["MedicionAngulo"], bandas: Sequence[int | None]) -> Image.Image:
-    """Esqueleto sin cara, flechas de los vectores y cada ángulo junto a su articulación."""
+                   medidas: Sequence["MedicionAngulo"], bandas: Sequence[int | None],
+                   *, vis_dibujo: float | None = None) -> Image.Image:
+    """Esqueleto sin cara, flechas de los vectores y cada ángulo junto a su articulación.
+
+    ``vis_dibujo`` puede ser más bajo que ``vis_min`` (p. ej. aérea) para que el
+    esqueleto/anclas se vean aunque MediaPipe marque poca confianza; no cambia el REBA.
+    """
 
     alto, ancho = image_rgb.shape[:2]
-    escala = min(ancho, alto)
-    grosor = max(2, round(escala / 320))
+    # Un poco más permisivo al dibujar que al medir (cenital / escorzo).
+    umbral = vis_dibujo if vis_dibujo is not None else max(VIS_DIBUJO_MIN, min(vis_min, vis_min * 0.75))
+
+    grosor = max(2, round(min(ancho, alto) / 320))
     lienzo = np.ascontiguousarray(image_rgb.copy())
-    mapa = {p.indice: p for p in landmarks if p.visibility >= vis_min}
+    mapa = {p.indice: p for p in landmarks if p.visibility >= umbral}
 
     for inicio, fin in CONEXIONES_CUERPO:  # esqueleto neutro con contorno para leerse sobre cualquier fondo
         if inicio in mapa and fin in mapa and inicio not in INDICES_CARA and fin not in INDICES_CARA:
@@ -156,42 +292,37 @@ def anotar_angulos(image_rgb: np.ndarray, landmarks: list[Landmark], vis_min: fl
     imagen = Image.fromarray(lienzo).convert("RGBA")
     capa = Image.new("RGBA", imagen.size, (0, 0, 0, 0))
     dibujo = ImageDraw.Draw(capa)
-    fuente = _fuente(max(13, min(40, round(escala * 0.026))))
-    relleno = max(4, round(escala * 0.006))
-    centro_x = (_punto(mapa, 23, 24) or (ancho / 2, 0))[0]
+    tam_fuente, relleno, separacion = _escala_etiquetas(ancho, alto, mapa, len(anotaciones))
+    fuente = _fuente(tam_fuente)
+    zona_cuerpo = _bbox_cuerpo(mapa)
+    centro_x = (_punto(mapa, 23, 24) or _punto(mapa, 11, 12) or (ancho / 2, 0))[0]
     ocupadas: list[tuple[float, float, float, float]] = []
-    sin_ancla_y = relleno * 2
+    sin_ancla_y = float(relleno * 2)
+
+    # Primero riesgo alto; a igualdad, de arriba a abajo para repartir mejor el espacio.
+    anotaciones.sort(key=lambda item: (-(item[2] or 0), (item[3] or (0, 0))[1]))
 
     for medida, color, banda, ancla in anotaciones:
         texto = _texto(medida)
         x0, y0, x1, y1 = dibujo.textbbox((0, 0), texto, font=fuente)
         w, h = x1 - x0 + 2 * relleno, y1 - y0 + 2 * relleno
-        if ancla is None:
-            caja = (relleno * 2, sin_ancla_y, relleno * 2 + w, sin_ancla_y + h)
-            sin_ancla_y += h + relleno
-        else:
-            separacion = escala * 0.03
-            derecha = ancla[0] >= centro_x
-            izquierda = ancla[0] + separacion if derecha else ancla[0] - separacion - w
-            arriba = ancla[1] - h / 2
-            for intento in range(16):
-                desplazamiento = (intento + 1) // 2 * (h + relleno) * (1 if intento % 2 else -1)
-                caja = (izquierda, arriba + desplazamiento, izquierda + w, arriba + desplazamiento + h)
-                caja = (min(max(caja[0], 0), ancho - w), min(max(caja[1], 0), alto - h), 0, 0)
-                caja = (caja[0], caja[1], caja[0] + w, caja[1] + h)
-                if not any(_solapa(caja, otra) for otra in ocupadas):
-                    break
+        caja, sin_ancla_y = _elegir_caja(
+            ancla, w, h, ancho, alto, separacion, relleno, centro_x, ocupadas, zona_cuerpo, sin_ancla_y,
+        )
+        if ancla is not None:
+            derecha = (caja[0] + caja[2]) / 2 >= ancla[0]
             borde_x = caja[0] if derecha else caja[2]
             dibujo.line([ancla, (borde_x, (caja[1] + caja[3]) / 2)], fill=(*color, 255), width=max(1, grosor - 1))
-            r = grosor + 2
+            r = max(2, grosor + 1)
             dibujo.ellipse([ancla[0] - r, ancla[1] - r, ancla[0] + r, ancla[1] + r], fill=(*color, 255), outline=(*TINTA, 255))
         ocupadas.append(caja)
-        dibujo.rounded_rectangle(caja, radius=relleno * 1.5, fill=(*color, 235), outline=(*TINTA, 255), width=1)
+        # Un poco más transparentes para que el cuerpo se lea detrás.
+        dibujo.rounded_rectangle(caja, radius=max(3, relleno), fill=(*color, 210), outline=(*TINTA, 255), width=1)
         tinta_texto = TINTA if banda == 2 else (255, 255, 255)
         dibujo.text((caja[0] + relleno - x0, caja[1] + relleno - y0), texto, font=fuente, fill=(*tinta_texto, 255))
 
     # Leyenda
-    fuente_leyenda = _fuente(max(11, round(escala * 0.02)))
+    fuente_leyenda = _fuente(max(10, min(tam_fuente - 1, round(min(ancho, alto) * 0.018))))
     etiquetas = [("1", COLOR_BANDA[1]), ("2", COLOR_BANDA[2]), ("3", COLOR_BANDA[3]), ("4+", COLOR_BANDA[4])]
     titulo, nota = "Banda REBA", "?  revisar"
     alto_l = dibujo.textbbox((0, 0), titulo, font=fuente_leyenda)[3] + relleno * 2
@@ -216,12 +347,13 @@ def anotar_angulos(image_rgb: np.ndarray, landmarks: list[Landmark], vis_min: fl
 
 
 def guardar_angulos(ruta: str | Path, image_rgb: np.ndarray, landmarks: list[Landmark], vis_min: float,
-                    medidas: Sequence["MedicionAngulo"], bandas: Sequence[int | None]) -> None:
+                    medidas: Sequence["MedicionAngulo"], bandas: Sequence[int | None],
+                    *, vis_dibujo: float | None = None) -> None:
     """Guarda la imagen anotada de una vista como PNG."""
 
     destino = Path(ruta)
     destino.parent.mkdir(parents=True, exist_ok=True)
     try:
-        anotar_angulos(image_rgb, landmarks, vis_min, medidas, bandas).save(destino, format="PNG")
+        anotar_angulos(image_rgb, landmarks, vis_min, medidas, bandas, vis_dibujo=vis_dibujo).save(destino, format="PNG")
     except OSError as exc:
         raise OSError(f"No se pudo guardar la imagen anotada: {destino}") from exc

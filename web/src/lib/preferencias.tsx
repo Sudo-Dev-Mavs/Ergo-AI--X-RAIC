@@ -1,13 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react"
 
 const CLAVE = "ergoai.preferencias.v1"
 
 export interface Preferencias {
   /** Controles más compactos en listas y formularios */
   densidad: "comoda" | "compacta"
-  /** Pedir confirmación antes de aprobar informe / rechazar */
+  /** Pedir confirmación antes de aprobar / rechazar / firmar informe */
   confirmarAcciones: boolean
-  /** Mostrar atajos en el visor de fotos */
+  /** Mostrar el botón «?» de atajos en el visor de fotos */
   mostrarAyudas: boolean
   /** Al abrir un caso, empezar en foto anotada o original */
   fotoInicial: "anotada" | "original"
@@ -38,21 +38,36 @@ function leer(): Preferencias {
   }
 }
 
+function aplicarDensidad(densidad: Preferencias["densidad"]) {
+  document.documentElement.dataset.densidad = densidad
+}
+
 export function ProveedorPreferencias({ children }: { children: ReactNode }) {
   const [preferencias, setEstado] = useState(leer)
+
+  useLayoutEffect(() => {
+    aplicarDensidad(preferencias.densidad)
+  }, [preferencias.densidad])
+
   useEffect(() => {
     try {
       window.localStorage.setItem(CLAVE, JSON.stringify(preferencias))
     } catch {
       /* ignore */
     }
-    document.documentElement.dataset.densidad = preferencias.densidad
   }, [preferencias])
 
   const setPreferencias = useCallback((parcial: Partial<Preferencias>) => {
-    setEstado((prev) => ({ ...prev, ...parcial }))
+    setEstado((prev) => {
+      const siguiente = { ...prev, ...parcial }
+      if (parcial.densidad) aplicarDensidad(parcial.densidad)
+      return siguiente
+    })
   }, [])
-  const resetPreferencias = useCallback(() => setEstado(DEFECTO), [])
+  const resetPreferencias = useCallback(() => {
+    aplicarDensidad(DEFECTO.densidad)
+    setEstado(DEFECTO)
+  }, [])
 
   const valor = useMemo(() => ({ preferencias, setPreferencias, resetPreferencias }), [preferencias, setPreferencias, resetPreferencias])
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>

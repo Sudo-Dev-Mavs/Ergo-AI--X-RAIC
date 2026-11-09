@@ -159,7 +159,7 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
               {caso.reba == null
                 ? "REBA pendiente de cálculo"
                 : caso.residual != null && caso.residual < caso.reba
-                  ? `Residual ${etiquetaReba(caso.residual, caso.nivel_residual)}`
+                  ? `Tras mejoras ${etiquetaReba(caso.residual, caso.nivel_residual)}`
                   : "Sin reducción residual"}
             </span>
             <span className={cn("etiqueta-estado", estadoPrincipal.cls)}>{estadoPrincipal.texto}</span>

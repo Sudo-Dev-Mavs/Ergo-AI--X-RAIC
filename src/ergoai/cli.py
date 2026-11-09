@@ -26,6 +26,19 @@ VISTAS = ("frente", "costado", "aerea")
 EXTENSIONES_IMAGEN = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
 
 
+def _medidas_para_anotar(angulos: list[MedicionAngulo], vista: str) -> list[MedicionAngulo]:
+    """Medidas a dibujar en una foto. La aérea siempre muestra torsión si existe valor,
+    aunque el respaldo 3D la haya etiquetado en costado/frente."""
+
+    propias = [m for m in angulos if m.vista == vista and m.valor_deg is not None]
+    if vista != "aerea":
+        return propias
+    if any(m.medida == "tronco_torsion" for m in propias):
+        return propias
+    torsion = next((m for m in angulos if m.medida == "tronco_torsion" and m.valor_deg is not None), None)
+    return [*propias, torsion] if torsion is not None else propias
+
+
 def _area_visible(persona: PoseResult, vis_min: float) -> float:
     """Devuelve el área de la caja de landmarks utilizables de una persona."""
 
@@ -147,7 +160,8 @@ def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None, ca
         vistas[nombre] = vista.a_diccionario(configuracion.pose.vis_min)
         if cacheadas is not None:
             vistas[nombre]["fuente_pose"] = "captura antes de difuminar el rostro"
-        guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min)
+        vis_esqueleto = 0.22 if nombre == "aerea" else configuracion.pose.vis_min
+        guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, vis_esqueleto)
         if not vista.detectado:
             advertencias.append(f"vista {nombre}: {vista.motivo}")
     if not vistas:
@@ -205,9 +219,14 @@ def ejecutar_angulos(caso: Path, raiz: Path, backend: PoseBackend | None = None,
         ruta_imagen = _ruta_vista(caso, nombre)
         if ruta_imagen is not None:
             imagen = cargar_imagen(ruta_imagen)
-            de_vista = [m for m in angulos if m.vista == nombre]
+            de_vista = _medidas_para_anotar(angulos, nombre)
             bandas = [banda_medida(m.medida, m.valor_deg, configuracion.reba) for m in de_vista]
-            guardar_angulos(destino / f"{nombre}_angulos.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min, de_vista, bandas)
+            # Aérea: MediaPipe suele marcar poca visibilidad; bajamos solo el umbral de dibujo.
+            vis_dibujo = 0.22 if nombre == "aerea" else None
+            guardar_angulos(
+                destino / f"{nombre}_angulos.png", imagen.pixeles, vista.landmarks,
+                configuracion.pose.vis_min, de_vista, bandas, vis_dibujo=vis_dibujo,
+            )
     salida = {
         "caso_id": pose["caso_id"], "version_modelo": pose["version_modelo"],
         "vistas": pose["vistas"], "vectores": vectores_salida,
@@ -234,6 +253,36 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
             angulo["fuente"] = "especialista"
         mediciones[clave] = angulo.get("valor_deg")
     return mediciones
+
+
+def _compactar_pendientes(
+    pendientes: list[dict[str, Any]], mediciones: dict[str, float | None]
+) -> list[dict[str, Any]]:
+    """Una entrada por medida/lado; omite avisos de “no medible” si ya hay valor usable."""
+
+    def clave(p: dict[str, Any]) -> str:
+        medida = str(p.get("medida") or "")
+        lado = p.get("lado")
+        if lado in ("L", "R") and not medida.endswith(("_L", "_R")):
+            return f"{medida}_{lado}" if medida != "cuello_flexion" else medida
+        return medida
+
+    vistos: set[str] = set()
+    salida: list[dict[str, Any]] = []
+    for pendiente in pendientes:
+        k = clave(pendiente)
+        valor = mediciones.get(k)
+        if valor is None and k.endswith(("_L", "_R")):
+            valor = mediciones.get(k)
+        motivo = str(pendiente.get("motivo") or "").lower()
+        es_falta = any(t in motivo for t in ("landmark", "ausente", "no utilizable"))
+        if valor is not None and es_falta:
+            continue
+        if k in vistos:
+            continue
+        vistos.add(k)
+        salida.append(pendiente)
+    return salida
 
 
 def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None) -> Path:
@@ -263,6 +312,7 @@ def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None,
                 angulo["banda_reba"] = reba.grupo_b[lado][campo]
     salida["reba"] = reba.a_diccionario()
     salida["pendientes_manuales"].extend(reba.pendientes_manuales)
+    salida["pendientes_manuales"] = _compactar_pendientes(salida["pendientes_manuales"], mediciones)
     salida["contexto"] = contexto
     salida["mediciones_reba"] = mediciones
     salida["fecha_analisis"] = datetime.now().astimezone().isoformat(timespec="seconds")

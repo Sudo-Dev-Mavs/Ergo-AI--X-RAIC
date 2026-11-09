@@ -2,6 +2,7 @@ import { AlertTriangle, Check, Pencil, Plus, RotateCcw, X } from "lucide-react"
 import { useState } from "react"
 
 import { PopoverForm, PopoverFormButton } from "@/components/cult/popover-form"
+import { InfoTooltip, TituloConAyuda, humanizarReferencia } from "@/components/ergo/InfoTooltip"
 import { BorderBeam } from "@/components/magicui/border-beam"
 import type { EstadoCaso, Jerarquia, Recomendacion } from "@/lib/api"
 import { JERARQUIAS } from "@/lib/dominio"
@@ -41,7 +42,7 @@ export function PanelRecomendaciones({ estado, accion, ocupado, ocultarAprobarIn
                 {aprobado
                   ? "Cualquier cambio regresará el informe a borrador y quedará registrado."
                   : nivel >= 3
-                    ? "Riesgo alto: se requiere control de ingeniería o rediseño aprobado, con responsable (NOM-036)."
+                    ? <>Riesgo alto: se requiere control de ingeniería o rediseño aprobado, con responsable (<TituloConAyuda clave="nom036" className="inline-flex">NOM-036</TituloConAyuda>).</>
                     : "Las propuestas se vuelven acciones de piso solo cuando las apruebas."}
               </p>
               {!aprobado && bloqueosResumen.length > 0 && (
@@ -69,7 +70,9 @@ export function PanelRecomendaciones({ estado, accion, ocupado, ocultarAprobarIn
             {porDecidir > 0 && !aprobado ? <span className="font-normal text-ink-soft"> · faltan {porDecidir}</span> : null}
           </p>
           {nivel >= 3 && !aprobado && (
-            <span className="text-[12px] text-graphite">NOM-036 · riesgo alto</span>
+            <span className="flex items-center gap-1 text-[12px] text-graphite">
+              NOM-036 · riesgo alto <InfoTooltip clave="nom036" />
+            </span>
           )}
         </div>
       )}
@@ -163,8 +166,14 @@ function Tarjeta({ rec, accion, ocupado, compacto }: { rec: Recomendacion; accio
           )}
           {(rec.referencias?.length ?? 0) > 0 && (
             <details className="mt-1 text-[12px] text-graphite">
-              <summary className="cursor-pointer select-none hover:text-ink">Fundamento ({rec.referencias!.length})</summary>
-              <ul className="mt-1.5 space-y-0.5 pl-4">{rec.referencias!.map((ref) => <li key={ref} className="list-disc">{ref}</li>)}</ul>
+              <summary className="cursor-pointer select-none hover:text-ink">
+                ¿Por qué se sugiere esta medida? ({rec.referencias!.length})
+              </summary>
+              <ul className="mt-1.5 space-y-0.5 pl-4">
+                {rec.referencias!.map((ref) => (
+                  <li key={ref} className="list-disc" title={ref}>{humanizarReferencia(ref)}</li>
+                ))}
+              </ul>
             </details>
           )}
         </div>

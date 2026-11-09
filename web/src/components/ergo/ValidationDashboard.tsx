@@ -7,6 +7,7 @@ import { VisorFoto } from "@/components/ergo/VisorFoto"
 import { api, type EstadoCaso, type ResumenCaso, type Vista } from "@/lib/api"
 import { useEspecialista } from "@/lib/app"
 import { colorPuntoCaso, etiquetaReba, etiquetaTarea } from "@/lib/dominio"
+import { usePreferencias } from "@/lib/preferencias"
 import { esRiesgoAlto, useReba } from "@/lib/useReba"
 import { cn } from "@/lib/utils"
 
@@ -290,7 +291,9 @@ function PanelDecision({
               : `Aprobar acciones de piso (${decididas}/${totalVigentes})`}
         </button>
         {esRiesgoAlto(inicial) && (
-          <p className="mt-2 text-[12px] text-graphite">NOM-036: riesgo alto exige ingeniería/rediseño aprobado con responsable.</p>
+          <p className="mt-2 text-[12px] text-graphite">
+            Norma NOM-036: con riesgo alto hace falta ingeniería o rediseño aprobado, con responsable asignado.
+          </p>
         )}
       </div>
     </div>
@@ -298,31 +301,46 @@ function PanelDecision({
 }
 
 function Evidencia({ estado }: { estado: EstadoCaso }) {
+  const { preferencias } = usePreferencias()
   const id = estado.resultado.caso_id
   const vistas = (["costado", "frente", "aerea"] as Vista[]).filter((v) => estado.imagenes.includes(v) || estado.fotos.includes(v))
   const [vista, setVista] = useState<Vista>(vistas[0] ?? "costado")
+  const [original, setOriginal] = useState(preferencias.fotoInicial === "original")
+  useEffect(() => {
+    setOriginal(preferencias.fotoInicial === "original")
+  }, [preferencias.fotoInicial, id])
   const anotada = estado.imagenes.includes(vista)
-  const src = vistas.length ? (anotada ? api.archivo(id, `${vista}_angulos.png`) : api.foto(id, vista)) : null
+  const src = vistas.length
+    ? (original || !anotada ? api.foto(id, vista) : api.archivo(id, `${vista}_angulos.png`))
+    : null
 
   return (
     <VisorFoto
       src={src}
-      alt={`Vista ${vista}`}
+      alt={`Vista ${vista} ${original ? "original" : "con ángulos"}`}
       vacio="Sin imagen analizada"
       barraExtra={
-        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Vista">
-          {vistas.map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={v === vista}
-              onClick={() => setVista(v)}
-              className={cn("rounded-md px-3 py-1.5 text-[13px] font-medium capitalize", v === vista ? "bg-jabil text-white" : "text-ink-soft hover:bg-slate-100")}
-            >
-              {v === "aerea" ? "Aérea" : v}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Vista">
+            {vistas.map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={v === vista}
+                onClick={() => setVista(v)}
+                className={cn("rounded-md px-3 py-1.5 text-[13px] font-medium capitalize", v === vista ? "bg-jabil text-white" : "text-ink-soft hover:bg-slate-100")}
+              >
+                {v === "aerea" ? "Aérea" : v}
+              </button>
+            ))}
+          </div>
+          {anotada && estado.fotos.includes(vista) && (
+            <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+              <input type="checkbox" checked={original} onChange={(e) => setOriginal(e.target.checked)} className="size-4 accent-[var(--jabil)]" />
+              Original
+            </label>
+          )}
         </div>
       }
     />
