@@ -3,13 +3,15 @@ import { useRef, useState } from "react"
 
 import { DirectionAwareTabs } from "@/components/cult/direction-aware-tabs"
 import { PanelBitacora } from "@/components/ergo/bitacora"
+import { ComparadorResidual } from "@/components/ergo/ComparadorResidual"
 import { Goniometro } from "@/components/ergo/goniometro"
 import { PanelPostura } from "@/components/ergo/postura"
 import { PanelRecomendaciones } from "@/components/ergo/recomendaciones"
-import { GridPattern } from "@/components/magicui/grid-pattern"
+import { VisorFoto } from "@/components/ergo/VisorFoto"
 import { api, type EstadoCaso, type Vista } from "@/lib/api"
 import { avisar, useEspecialista } from "@/lib/app"
 import { accionRiesgo, colorRiesgo, etiquetaTarea, fechaCorta } from "@/lib/dominio"
+import { usePreferencias } from "@/lib/preferencias"
 import { useDatos } from "@/lib/useDatos"
 import { cn } from "@/lib/utils"
 
@@ -21,11 +23,15 @@ const MENSAJE_ACCION: Record<string, string> = {
 export function CasoPage({ id }: { id: string }) {
   const { datos: estado, setDatos, error } = useDatos(() => api.caso(id), [id])
   const { pedirFirma } = useEspecialista()
+  const { preferencias } = usePreferencias()
   const [ocupado, setOcupado] = useState(false)
 
   async function accion(nombre: string, recId?: string, valores?: Record<string, string>, comentario?: string) {
     const usuario = pedirFirma()
     if (!usuario) return false
+    if (preferencias.confirmarAcciones && nombre === "aprobar_informe") {
+      if (!window.confirm("¿Aprobar el informe y generar las acciones de piso? Quedará firmado en la bitácora.")) return false
+    }
     setOcupado(true)
     try {
       setDatos(await api.validar(id, { usuario, accion: nombre, rec_id: recId, valores, comentario }))
@@ -69,7 +75,7 @@ export function CasoPage({ id }: { id: string }) {
 
   const { resultado, validacion, residual } = estado
   const reba = resultado.reba
-  const ctx = resultado.contexto
+  const ctx = resultado.contexto ?? {}
   const porValidar = validacion.recomendaciones.filter((rec) => rec.estado === "propuesta").length
   const version = encodeURIComponent(validacion.bitacora.at(-1)?.hash.slice(0, 8) ?? resultado.fecha_analisis ?? "")
 
@@ -121,6 +127,26 @@ export function CasoPage({ id }: { id: string }) {
         </div>
       </section>
 
+      <section className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+        <ComparadorResidual
+          inicial={reba.final.reportado}
+          residual={residual.residual.reba}
+          origen={residual.origen_residual ?? "agente"}
+        />
+        <div className="hoja flex flex-col justify-center gap-3 p-5">
+          <p className="text-[13px] font-semibold tracking-[0.08em] text-jabil-cyan uppercase">Siguiente paso</p>
+          <p className="text-[15px] text-ink-soft">
+            {validacion.estado_informe === "aprobado"
+              ? "Informe aprobado. Descarga o imprime desde la pestaña Informe."
+              : porValidar > 0
+                ? `Decide las ${porValidar} propuestas en Recomendaciones. El botón de acción de piso se habilita al completar.`
+                : estado.bloqueos.length > 0
+                  ? estado.bloqueos[0]
+                  : "Listo: aprueba el informe para generar la acción de piso."}
+          </p>
+        </div>
+      </section>
+
       <section className="mt-12">
         <DirectionAwareTabs tabs={pestanas} />
       </section>
@@ -148,37 +174,40 @@ function Cifra({ titulo, valor, nota, color }: { titulo: string; valor: string |
 }
 
 function Muestra({ id, estado, version }: { id: string; estado: EstadoCaso; version: string }) {
+  const { preferencias } = usePreferencias()
   const vistas = (["costado", "frente", "aerea"] as Vista[]).filter((v) => estado.imagenes.includes(v) || estado.fotos.includes(v))
   const [vista, setVista] = useState<Vista>(vistas[0] ?? "costado")
-  const [original, setOriginal] = useState(false)
+  const [original, setOriginal] = useState(preferencias.fotoInicial === "original")
   const anotada = estado.imagenes.includes(vista)
-  const src = original || !anotada ? api.foto(id, vista) : api.archivo(id, `${vista}_angulos.png`, version)
-  const contenedor = useRef<HTMLDivElement>(null)
+  const src = vistas.length
+    ? (original || !anotada ? api.foto(id, vista) : api.archivo(id, `${vista}_angulos.png`, version))
+    : null
 
   return (
     <figure className="min-w-0">
-      <div ref={contenedor} className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[14px] border border-rule bg-sheet">
-        <GridPattern width={24} height={24} className="stroke-rule/70 [mask-image:radial-gradient(ellipse_at_center,white,transparent_85%)]" />
-        {vistas.length ? (
-          <img key={src} src={src} alt={`Vista ${vista} ${original ? "original" : "con ángulos medidos"}`} className="relative max-h-full max-w-full object-contain" />
-        ) : <p className="relative text-graphite">Sin imágenes para este caso.</p>}
-      </div>
-      <figcaption className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1" role="tablist" aria-label="Vista">
-          {vistas.map((v) => (
-            <button key={v} role="tab" aria-selected={v === vista} onClick={() => setVista(v)}
-              className={cn("rounded-md px-3 py-1.5 text-[14px] font-medium capitalize", v === vista ? "bg-ink text-sheet" : "text-ink-soft hover:bg-rule-soft")}>
-              {v === "aerea" ? "Aérea" : v}
-            </button>
-          ))}
-        </div>
-        {anotada && estado.fotos.includes(vista) && (
-          <label className="flex items-center gap-2 text-[14px] text-ink-soft">
-            <input type="checkbox" checked={original} onChange={(e) => setOriginal(e.target.checked)} className="size-4 accent-[var(--ink)]" />
-            Ver foto original
-          </label>
-        )}
-      </figcaption>
+      <VisorFoto
+        src={src}
+        alt={`Vista ${vista} ${original ? "original" : "con ángulos medidos"}`}
+        vacio="Sin imágenes para este caso."
+        barraExtra={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1" role="tablist" aria-label="Vista">
+              {vistas.map((v) => (
+                <button key={v} type="button" role="tab" aria-selected={v === vista} onClick={() => setVista(v)}
+                  className={cn("rounded-md px-3 py-1.5 text-[14px] font-medium capitalize", v === vista ? "bg-jabil text-white" : "text-ink-soft hover:bg-rule-soft")}>
+                  {v === "aerea" ? "Aérea" : v}
+                </button>
+              ))}
+            </div>
+            {anotada && estado.fotos.includes(vista) && (
+              <label className="flex items-center gap-2 text-[14px] text-ink-soft">
+                <input type="checkbox" checked={original} onChange={(e) => setOriginal(e.target.checked)} className="size-4 accent-[var(--jabil)]" />
+                Original
+              </label>
+            )}
+          </div>
+        }
+      />
     </figure>
   )
 }

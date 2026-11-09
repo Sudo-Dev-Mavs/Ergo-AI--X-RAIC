@@ -2,48 +2,57 @@
 @import "@fontsource-variable/archivo/wdth.css";
 
 /*
- * ErgoAI · lenguaje visual "vitela y goniómetro"
- * - Todo se dibuja en tinta sobre vitela fría; el color solo codifica riesgo REBA.
- * - Una sola familia (Archivo variable) usando su eje de ancho:
- *   expandida para títulos, normal para texto, condensada con cifras tabulares para medidas.
+ * ErgoAI · identidad Jabil
+ * Azul marino corporativo (#003876), cian de acento, fondos slate limpios.
+ * El color de riesgo solo aparece en el semáforo REBA.
  */
 
 :root {
-  --vellum: #e8ecef;
-  --sheet: #f6f8f9;
-  --ink: #13233b;
-  --ink-soft: #2a3d58;
-  --graphite: #5b6776;
-  --rule: #c8d0d8;
-  --rule-soft: #dde3e8;
+  --jabil: #003876;
+  --jabil-soft: #0a4a8f;
+  --jabil-deep: #002554;
+  --jabil-cyan: #00a3e0;
+  --jabil-cyan-soft: #5ec8f0;
 
-  --riesgo-inapreciable: #6f8f7a;
-  --riesgo-bajo: #2f8f5b;
-  --riesgo-medio: #d99a00;
-  --riesgo-alto: #e0610e;
-  --riesgo-muy-alto: #c42b1c;
-  --riesgo-pendiente: #8a99ad;
+  --vellum: #f4f7fb;
+  --sheet: #ffffff;
+  --ink: #003876;
+  --ink-soft: #1e3a5f;
+  --graphite: #475569; /* slate-600 · contraste AA en planta */
+  --rule: #c9d4e0;
+  --rule-soft: #e3eaf1;
 
-  /* Tokens que esperan los componentes de Magic UI y Cult UI */
+  --riesgo-inapreciable: #14532d;
+  --riesgo-bajo: #22c55e;
+  --riesgo-medio: #eab308;
+  --riesgo-alto: #f97316;
+  --riesgo-muy-alto: #dc2626;
+  --riesgo-pendiente: #94a3b8;
+
   --background: var(--vellum);
   --foreground: var(--ink);
   --card: var(--sheet);
   --card-foreground: var(--ink);
-  --muted: #e1e6ea;
+  --muted: #e2e8f0;
   --muted-foreground: var(--graphite);
   --border: var(--rule);
   --input: var(--rule);
-  --primary: var(--ink);
-  --primary-foreground: var(--sheet);
-  --accent: #dde3e8;
-  --accent-foreground: var(--ink);
-  --ring: var(--ink);
-  --radius: 10px;
+  --primary: var(--jabil);
+  --primary-foreground: #ffffff;
+  --accent: #dff3fb;
+  --accent-foreground: var(--jabil);
+  --ring: var(--jabil-cyan);
+  --radius: 12px;
 }
 
 @theme inline {
   --font-sans: "Archivo Variable", "Archivo", system-ui, sans-serif;
 
+  --color-jabil: var(--jabil);
+  --color-jabil-soft: var(--jabil-soft);
+  --color-jabil-deep: var(--jabil-deep);
+  --color-jabil-cyan: var(--jabil-cyan);
+  --color-jabil-cyan-soft: var(--jabil-cyan-soft);
   --color-vellum: var(--vellum);
   --color-sheet: var(--sheet);
   --color-ink: var(--ink);
@@ -66,7 +75,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-ring: var(--ring);
 
-  --shadow-inner-shadow: inset 0 1px 1px rgba(19, 35, 59, 0.08);
+  --shadow-inner-shadow: inset 0 1px 1px rgba(0, 56, 118, 0.08);
 
   --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
   --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
@@ -84,10 +93,17 @@
 
 @layer base {
   * { border-color: var(--rule); }
-  html { background: var(--vellum); }
+  html {
+    background: var(--vellum);
+    background-image:
+      radial-gradient(1200px 600px at 0% -10%, color-mix(in srgb, var(--jabil-cyan) 14%, transparent), transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--jabil) 10%, transparent), transparent 50%);
+    background-attachment: fixed;
+  }
   body {
     margin: 0;
-    background: var(--vellum);
+    min-height: 100dvh;
+    background: transparent;
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 15px;
@@ -95,44 +111,111 @@
     font-feature-settings: "ss01";
     -webkit-font-smoothing: antialiased;
   }
-  ::selection { background: var(--ink); color: var(--sheet); }
-  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  html[data-densidad="compacta"] body { font-size: 14px; }
+  ::selection { background: var(--jabil); color: #fff; }
+  :focus-visible { outline: 2px solid var(--jabil-cyan); outline-offset: 2px; }
   button { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
 }
 
 @layer components {
-  /* Títulos: Archivo expandido, compacto y pesado como rótulo de plano */
   .t-display { font-stretch: 125%; font-weight: 760; letter-spacing: -0.025em; line-height: 1.02; }
   .t-title { font-stretch: 118%; font-weight: 680; letter-spacing: -0.015em; line-height: 1.15; }
-  /* Medidas: condensado con cifras tabulares, como cota de dibujo técnico */
   .t-num { font-stretch: 72%; font-weight: 620; font-variant-numeric: tabular-nums lining-nums; letter-spacing: 0; }
   .t-quiet { color: var(--graphite); }
 
-  /* Estado de una recomendación: lápiz (propuesta) → tinta (aprobada) */
-  .trazo-lapiz { border: 1.5px dashed color-mix(in oklch, var(--graphite) 70%, transparent); background: color-mix(in oklch, var(--sheet) 60%, transparent); }
-  .trazo-tinta { border: 1.5px solid var(--ink); background: var(--sheet); }
+  .trazo-lapiz { border: 1.5px dashed color-mix(in oklch, var(--graphite) 70%, transparent); background: color-mix(in oklch, var(--sheet) 70%, transparent); }
+  .trazo-tinta { border: 1.5px solid var(--jabil); background: var(--sheet); }
   .trazo-tachado { border: 1px solid var(--rule-soft); background: transparent; }
 
-  .hoja { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; }
+  .hoja {
+    background: color-mix(in srgb, var(--sheet) 92%, transparent);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    backdrop-filter: blur(8px);
+  }
+  .marca-jabil {
+    background: linear-gradient(165deg, var(--jabil-deep) 0%, var(--jabil) 55%, var(--jabil-soft) 100%);
+    color: #fff;
+  }
   .campo {
     width: 100%; border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px;
     padding: 0.55rem 0.75rem; font: inherit; color: var(--ink);
   }
-  .campo:focus { outline: 2px solid var(--ink); outline-offset: 0; border-color: var(--ink); }
+  .campo:focus { outline: 2px solid var(--jabil-cyan); outline-offset: 0; border-color: var(--jabil); }
   .boton-tinta {
     display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 8px; padding: 0.5rem 0.9rem;
-    background: var(--ink); color: var(--sheet); font-weight: 600; font-size: 14px; transition: background 0.15s;
+    background: var(--jabil); color: #fff; font-weight: 600; font-size: 14px; transition: background 0.15s, transform 0.15s;
   }
-  .boton-tinta:hover:not(:disabled) { background: var(--ink-soft); }
+  .boton-tinta:hover:not(:disabled) { background: var(--jabil-soft); }
+  .boton-tinta:active:not(:disabled) { transform: translateY(1px); }
   .boton-tinta:disabled { opacity: 0.45; }
   .boton-linea {
     display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 8px; padding: 0.45rem 0.85rem;
     border: 1px solid var(--rule); background: var(--sheet); color: var(--ink); font-weight: 560; font-size: 14px;
     transition: border-color 0.15s, background 0.15s;
   }
-  .boton-linea:hover:not(:disabled) { border-color: var(--ink); }
+  .boton-linea:hover:not(:disabled) { border-color: var(--jabil); background: color-mix(in srgb, var(--jabil) 4%, white); }
   .boton-linea:disabled { opacity: 0.45; }
+  .boton-cian {
+    display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 8px; padding: 0.5rem 0.9rem;
+    background: var(--jabil-cyan); color: #00304f; font-weight: 650; font-size: 14px;
+  }
+  .boton-cian:hover:not(:disabled) { filter: brightness(1.05); }
+
+  .drop-activo {
+    outline: 2px solid var(--jabil-cyan);
+    outline-offset: 2px;
+    background: color-mix(in srgb, var(--jabil-cyan) 10%, white);
+  }
+
+  .drop-zona {
+    border: 2px dashed color-mix(in srgb, var(--jabil) 45%, transparent);
+    background: #f8fafc;
+    border-radius: 12px;
+  }
+  .drop-zona:hover, .drop-zona:focus-within { border-color: var(--jabil); background: color-mix(in srgb, var(--jabil) 4%, white); }
+
+  /* Slider industrial REBA (no estilo nativo del navegador) */
+  .slider-reba {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg,
+      var(--riesgo-inapreciable) 0%,
+      var(--riesgo-bajo) 12%,
+      var(--riesgo-medio) 35%,
+      var(--riesgo-alto) 60%,
+      var(--riesgo-muy-alto) 100%);
+    outline: none;
+  }
+  .slider-reba:disabled { opacity: 0.4; }
+  .slider-reba::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--jabil-cyan);
+    border: 3px solid var(--jabil);
+    box-shadow: 0 1px 4px rgba(0, 56, 118, 0.35);
+    cursor: pointer;
+  }
+  .slider-reba::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--jabil-cyan);
+    border: 3px solid var(--jabil);
+    cursor: pointer;
+  }
+
+  .etiqueta-estado {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    border-radius: 6px; padding: 0.2rem 0.55rem;
+    font-size: 12px; font-weight: 600; line-height: 1.2;
+  }
+  .aviso-firma {
+    border: 1px solid #f59e0b; background: #fffbeb; color: #92400e;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -13,6 +13,7 @@ import { ErrorApi, api, type TipoTarea, type Toma, type Vista } from "@/lib/api"
 import { avisar, ir, useEspecialista } from "@/lib/app"
 import { conLimite, useCamaras } from "@/lib/camaras"
 import { TAREAS, etiquetaTarea } from "@/lib/dominio"
+import { filtrarImagenesErgo, imagenDesdeClipboard } from "@/lib/imagenes"
 import { cn } from "@/lib/utils"
 
 type Lado = "izquierdo" | "derecho"
@@ -33,7 +34,7 @@ const VISTAS: { vista: Vista; titulo: string; ayuda: string }[] = [
   { vista: "frente", titulo: "Frente", ayuda: "Inclinación lateral, abducción y apoyo de piernas." },
   { vista: "aerea", titulo: "Aérea", ayuda: "Torsión de tronco entre hombros y caderas." },
 ]
-const TITULOS = ["Fotografías", "Tarea", "Lo que la foto no muestra"]
+const TITULOS = ["Fotografías", "Tarea", "Limitaciones de la evidencia fotográfica"]
 const CLAVE_FUENTES = "ergoai.camaras.asignacion"
 const CLAVE_INTERVALO = "ergoai.camaras.intervalo"
 const CLAVE_BORRADOR = "ergoai.borrador"
@@ -250,12 +251,63 @@ export function NuevaPage() {
     sale: (d: number) => ({ x: reducir ? 0 : -48 * d, opacity: 0 }),
   }
 
+  function repartirArchivos(lista: FileList | File[]) {
+    const imagenes = filtrarImagenesErgo(lista).slice(0, 3)
+    if (!imagenes.length) {
+      if ([...lista].some((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|bmp)$/i.test(f.name))) {
+        avisar({ titulo: "Formato no admitido", detalle: "Usa JPG o PNG.", tipo: "error" })
+      }
+      return
+    }
+    const orden: Vista[] = ["costado", "frente", "aerea"]
+    setFotos((prev) => {
+      const siguiente = { ...prev }
+      const libres = orden.filter((v) => fuentes[v].modo === "archivo" && !siguiente[v])
+      const destinos = libres.length ? libres : orden.filter((v) => fuentes[v].modo === "archivo")
+      imagenes.forEach((archivo, i) => {
+        const nombre = archivo.name.toLowerCase()
+        const porNombre = orden.find((v) => nombre.includes(v) || (v === "aerea" && (nombre.includes("aerea") || nombre.includes("aérea") || nombre.includes("top"))))
+        const vista = porNombre && fuentes[porNombre].modo === "archivo" ? porNombre : destinos[i]
+        if (vista) siguiente[vista] = archivo
+      })
+      return siguiente
+    })
+    avisar({ titulo: imagenes.length === 1 ? "Foto cargada" : `${imagenes.length} fotos cargadas`, detalle: "Se asignaron a costado, frente o aérea." })
+  }
+
+  // Ctrl+V en el paso de fotos: pega en el primer hueco libre (si el foco no está en una ranura).
+  useEffect(() => {
+    if (paso !== 0) return
+    const onPaste = (e: globalThis.ClipboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+      if (t?.closest?.("[data-ranura-foto]")) return
+      const hayImagen = [...(e.clipboardData?.items ?? [])].some((i) => i.kind === "file" && i.type.startsWith("image/"))
+      if (!hayImagen) return
+      e.preventDefault()
+      void imagenDesdeClipboard(e.clipboardData).then((img) => {
+        if (!img) return
+        const orden: Vista[] = ["costado", "frente", "aerea"]
+        const libre = orden.find((v) => fuentes[v].modo === "archivo" && !fotos[v]) ?? orden.find((v) => fuentes[v].modo === "archivo")
+        if (!libre) {
+          avisar({ titulo: "No hay ranura libre", detalle: "Cambia una vista a Archivo o quita una foto.", tipo: "error" })
+          return
+        }
+        setFotos((prev) => ({ ...prev, [libre]: img }))
+        avisar({ titulo: "Foto pegada", detalle: `Se asignó a ${libre}.` })
+      })
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [paso, fuentes, fotos])
+
   return (
     <div className="mx-auto max-w-[1180px]">
       <header className="pb-6">
-        <h1 className="t-display text-[44px] sm:text-[56px]">Nueva evaluación</h1>
+        <p className="text-[12px] font-semibold tracking-[0.14em] text-jabil-cyan uppercase">Paso a paso</p>
+        <h1 className="t-display mt-1 text-[44px] text-jabil sm:text-[56px]">Nueva evaluación</h1>
         <p className="mt-3 max-w-[64ch] text-[16px] text-ink-soft">
-          Sube fotos o usa las cámaras conectadas, describe la tarea y marca lo que la foto no muestra. Puedes ir y volver entre pasos antes de analizar.
+          Arrastra, elige o pega fotos con Ctrl+V (o usa cámaras). Describe la tarea y marca lo que la foto no muestra.
         </p>
       </header>
 
@@ -265,8 +317,26 @@ export function NuevaPage() {
         <AnimatePresence mode="wait" custom={direccion} initial={false}>
           <motion.div key={paso} custom={direccion} variants={variantes} initial="entra" animate="quieto" exit="sale" transition={{ duration: 0.22, ease: "easeOut" }}>
             {paso === 0 && (
-              <div className="space-y-6">
+              <div
+                className="space-y-6"
+                onDragOver={(e) => {
+                  if ([...e.dataTransfer.types].includes("Files")) {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = "copy"
+                  }
+                }}
+                onDrop={(e) => {
+                  if (![...e.dataTransfer.types].includes("Files")) return
+                  // Si cayó en una ranura, ella ya lo manejó con stopPropagation.
+                  if ((e.target as HTMLElement | null)?.closest?.("[data-ranura-foto]")) return
+                  e.preventDefault()
+                  repartirArchivos(e.dataTransfer.files)
+                }}
+              >
                 <EstadoCamaras {...camaras} />
+                <p className="text-[13px] text-ink-soft">
+                  <span className="font-semibold text-jabil">Costado</span> es la vista principal. Suelta la foto en su recuadro, o pega con <kbd className="rounded border border-rule bg-sheet px-1 font-medium text-jabil">Ctrl+V</kbd>. Varias a la vez se asignan por nombre (costado/frente/aérea).
+                </p>
                 <div className="grid gap-6 md:grid-cols-3 md:grid-rows-[auto_auto_auto_auto] md:gap-x-4 md:gap-y-2">
                   {VISTAS.map(({ vista, titulo, ayuda }) => (
                     <VistaFuente key={vista} vista={vista} titulo={titulo} ayuda={ayuda} principal={vista === "costado"}
@@ -307,6 +377,7 @@ export function NuevaPage() {
               <div className="grid max-w-[720px] gap-5">
                 <Campo etiqueta="Identificador del caso">
                   <input className="campo t-num text-[17px]" value={casoId} onChange={(e) => setCasoId(e.target.value.trim())} aria-invalid={!idValido} />
+                  <p className="mt-1 text-[12px] text-graphite">Autogenerado · editable</p>
                   {!idValido && <p className="mt-1 text-[13px] text-[var(--riesgo-muy-alto)]">Usa letras, números, punto, guion o guion bajo.</p>}
                 </Campo>
                 <Campo etiqueta="Tipo de tarea">
@@ -315,7 +386,8 @@ export function NuevaPage() {
                 </Campo>
                 <div className="flex flex-wrap gap-x-4 gap-y-4">
                   <Campo etiqueta="Carga (kg)" className="w-[120px]">
-                    <input className="campo t-num text-[17px]" inputMode="decimal" value={carga} onChange={(e) => setCarga(e.target.value)} aria-invalid={!cargaValida} />
+                    <input className="campo t-num text-[17px]" inputMode="decimal" value={carga} onChange={(e) => setCarga(e.target.value)} placeholder="0" aria-invalid={!cargaValida} />
+                    {carga === "0" || carga === "" ? <p className="mt-1 text-[12px] text-graphite">0 kg (sin carga)</p> : null}
                   </Campo>
                   <Campo etiqueta="Agarre de la carga">
                     <HaloSegmented className="overflow-x-auto" translucent={false} value={agarre} onValueChange={setAgarre}
@@ -337,23 +409,23 @@ export function NuevaPage() {
             )}
 
             {paso === 2 && (
-              <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px]">
-                <div>
-                  <p className="mb-2 max-w-[60ch] text-[14px] text-graphite">Ajustes REBA que se observan en piso. Si no aplican, déjalos apagados.</p>
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="max-w-[480px]">
+                  <p className="mb-2 text-[14px] text-graphite">Ajustes REBA que se observan en piso. Si no aplican, déjalos apagados.</p>
                   <ul className="divide-y divide-rule-soft">
                     {AJUSTES.map(({ clave, texto }) => (
-                      <li key={clave} className="flex items-center justify-between gap-4 py-2.5">
-                        <span className="text-[15px]">{texto}</span>
+                      <li key={clave} className="flex items-center justify-between gap-3 py-2">
+                        <span className="text-[14px] leading-snug">{texto}</span>
                         <HaloSwitch translucent={false} size="sm" aria-label={texto} checked={Boolean(ajustes[clave])}
                           onCheckedChange={(v) => setAjustes((a) => ({ ...a, [clave]: v }))} />
                       </li>
                     ))}
                     {AJUSTES_LADO.map(({ clave, texto }) => (
-                      <li key={clave} className="flex items-center justify-between gap-4 py-2.5">
-                        <span className="text-[15px]">{texto}</span>
-                        <span className="flex items-center gap-4 text-[13px] text-graphite">
+                      <li key={clave} className="flex items-center justify-between gap-3 py-2">
+                        <span className="text-[14px] leading-snug">{texto}</span>
+                        <span className="flex shrink-0 items-center gap-3 text-[12px] text-graphite">
                           {(["izquierdo", "derecho"] as Lado[]).map((lado) => (
-                            <label key={lado} className="flex items-center gap-2">
+                            <label key={lado} className="flex items-center gap-1.5">
                               {lado === "izquierdo" ? "Izq." : "Der."}
                               <HaloSwitch translucent={false} size="sm" aria-label={`${texto} ${lado}`} checked={Boolean(lados[clave]?.[lado])}
                                 onCheckedChange={(v) => setLados((l) => ({ ...l, [clave]: { ...(l[clave] ?? { izquierdo: false, derecho: false }), [lado]: v } }))} />
@@ -363,10 +435,10 @@ export function NuevaPage() {
                       </li>
                     ))}
                   </ul>
+                  <div className="mt-4"><FlujoAgente trabajando={trabajando} /></div>
                 </div>
                 <Resumen fotos={fotos} origen={origen} tomaElegida={tomaElegida} borrador={borrador} casoId={casoId} tarea={tarea}
                   carga={cargaNum} agarre={agarre} postura={postura} onIr={irPaso} />
-                <div className="lg:col-span-2"><FlujoAgente trabajando={trabajando} /></div>
               </div>
             )}
           </motion.div>
@@ -374,23 +446,30 @@ export function NuevaPage() {
 
         {error && <p role="alert" className="mt-6 rounded-lg border border-[var(--riesgo-muy-alto)] bg-sheet p-4 text-[14px]">{error}</p>}
 
-        <div className="sticky bottom-0 z-20 mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-ink bg-vellum/95 py-4 backdrop-blur">
+        <div className="sticky bottom-0 z-20 mt-10 flex flex-wrap items-end justify-between gap-3 border-t border-ink bg-vellum/95 py-4 backdrop-blur">
           <button type="button" className="boton-linea" disabled={paso === 0 || trabajando} onClick={() => irPaso(paso - 1)}>
             <ArrowLeft className="size-4" /> Anterior
           </button>
-          <p className="hidden text-[14px] text-graphite md:block">
-            {trabajando ? "Detectando pose y midiendo ángulos; suele tardar unos segundos."
-              : paso === 2 && primerPendiente !== null ? `Falta completar el paso ${primerPendiente + 1}: ${TITULOS[primerPendiente].toLowerCase()}.`
-              : auto ? `Capturando cada ${intervaloS} s.` : `Paso ${paso + 1} de 3`}
-          </p>
-          {paso < 2 ? (
-            <button type="submit" className="boton-tinta">Siguiente: {TITULOS[paso + 1].toLowerCase()} <ArrowRight className="size-4" /></button>
-          ) : (
-            <ShimmerButton type="submit" disabled={!puedeAnalizar} background="var(--ink)" shimmerColor="#c8d0d8" borderRadius="10px"
-              className="px-6 py-3 text-[15px] font-semibold disabled:opacity-40">
-              {trabajando ? "Analizando…" : "Analizar postura"}
-            </ShimmerButton>
-          )}
+          <div className="flex flex-col items-end gap-1.5">
+            {paso === 2 && !puedeAnalizar && !trabajando && (
+              <p className="max-w-[36ch] text-right text-[13px] font-medium text-amber-900">
+                {primerPendiente !== null
+                  ? `Falta completar el paso ${primerPendiente + 1}: ${TITULOS[primerPendiente].toLowerCase()}.`
+                  : "Completa los requisitos para analizar."}
+              </p>
+            )}
+            {paso < 2 ? (
+              <button type="submit" className="boton-tinta">Siguiente: {TITULOS[paso + 1].toLowerCase()} <ArrowRight className="size-4" /></button>
+            ) : (
+              <ShimmerButton type="submit" disabled={!puedeAnalizar} background="#00a3e0" shimmerColor="#e0f5fc" borderRadius="10px"
+                className="px-6 py-3 text-[15px] font-semibold text-white disabled:opacity-40">
+                {trabajando ? "Analizando…" : "Analizar postura"}
+              </ShimmerButton>
+            )}
+            {trabajando && (
+              <p className="text-[13px] text-graphite">Detectando pose y midiendo ángulos…</p>
+            )}
+          </div>
         </div>
       </form>
     </div>
@@ -439,36 +518,66 @@ function Resumen({ fotos, origen, tomaElegida, borrador, casoId, tarea, carga, a
     setUrls(creadas)
     return () => Object.values(creadas).forEach(URL.revokeObjectURL)
   }, [fotos])
+
+  const srcDe = (vista: Vista) => {
+    const fuente = origen(vista)
+    if (fuente === "archivo") return urls[vista] ?? null
+    if (fuente === "captura" && tomaElegida) return api.captura(borrador, tomaElegida.id, vista)
+    return null
+  }
+  const principal = (["costado", "frente", "aerea"] as Vista[]).find((v) => srcDe(v)) ?? "costado"
+  const srcPrincipal = srcDe(principal)
+  const faltaCostado = !srcDe("costado")
+
   return (
     <aside className="trazo-tinta self-start rounded-[12px] p-4" aria-label="Resumen antes de analizar">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="t-title text-[17px]">Se va a analizar</h3>
-        <button type="button" className="text-[13px] text-ink-soft underline underline-offset-4 hover:text-ink" onClick={() => onIr(0)}>Cambiar fotos</button>
+        <button type="button" className="text-[13px] font-medium text-jabil underline underline-offset-4 hover:text-jabil-soft" onClick={() => onIr(0)}>Cambiar fotos</button>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+
+      {faltaCostado && (
+        <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[13px] font-medium text-amber-950">
+          Falta foto de costado (obligatoria).
+        </p>
+      )}
+
+      <figure className="mt-3">
+        <div className="aspect-[4/3] max-w-[220px] overflow-hidden rounded-md border border-rule bg-ink/5">
+          {srcPrincipal
+            ? <img src={srcPrincipal} alt={`Vista ${principal}`} className="h-full w-full object-cover" />
+            : <span className="flex h-full items-center justify-center text-[13px] text-graphite">Sin foto principal</span>}
+        </div>
+        <figcaption className="mt-1.5 text-[12px] text-graphite capitalize">
+          {principal === "aerea" ? "Aérea" : principal}
+          {origen(principal) === "captura" && tomaElegida ? ` · toma ${hora(tomaElegida.fecha)}` : origen(principal) === "archivo" ? " · archivo" : ""}
+        </figcaption>
+      </figure>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
         {VISTAS.map(({ vista, titulo }) => {
-          const fuente = origen(vista)
-          const src = fuente === "archivo" ? urls[vista] : fuente === "captura" && tomaElegida ? api.captura(borrador, tomaElegida.id, vista) : null
+          const ok = Boolean(srcDe(vista))
           return (
-            <figure key={vista}>
-              <div className="aspect-[4/3] overflow-hidden rounded-md bg-ink/5">
-                {src ? <img src={src} alt={`Vista ${titulo}`} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-[12px] text-graphite">Sin foto</span>}
-              </div>
-              <figcaption className="mt-1 text-[12px] text-graphite">
-                {titulo}{fuente === "captura" && tomaElegida ? `, toma ${hora(tomaElegida.fecha)}` : fuente === "archivo" ? ", archivo" : ""}
-                {fuente === "captura" && tomaElegida?.privacidad?.[vista]?.rostros === 0 && <span className="block font-medium text-ink">Sin persona detectada</span>}
-              </figcaption>
-            </figure>
+            <span
+              key={vista}
+              className={cn(
+                "rounded-md px-2 py-0.5 text-[12px] font-medium",
+                ok ? "bg-jabil/10 text-jabil" : "bg-slate-100 text-graphite",
+              )}
+            >
+              {titulo}{ok ? " ✓" : " —"}
+            </span>
           )
         })}
       </div>
+
       <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[14px]">
         <dt className="text-graphite">Caso</dt><dd className="t-num truncate">{casoId}</dd>
         <dt className="text-graphite">Tarea</dt><dd>{etiquetaTarea(tarea)}</dd>
-        <dt className="text-graphite">Carga</dt><dd>{carga} kg, agarre {agarre}</dd>
+        <dt className="text-graphite">Carga</dt><dd>{carga} kg · agarre {agarre}</dd>
         <dt className="text-graphite">Postura</dt><dd>{postura === "de_pie" ? "De pie" : postura === "sentado" ? "Sentado" : "Alterna"}</dd>
       </dl>
-      <button type="button" className="mt-3 text-[13px] text-ink-soft underline underline-offset-4 hover:text-ink" onClick={() => onIr(1)}>Cambiar tarea</button>
+      <button type="button" className="mt-3 text-[13px] text-ink-soft underline underline-offset-4 hover:text-ink" onClick={() => onIr(1)}>Cambiar de tarea</button>
     </aside>
   )
 }

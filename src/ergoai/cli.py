@@ -310,8 +310,19 @@ def ejecutar_validacion(carpeta: Path, raiz: Path, usuario: str, accion: str, re
         datos = valores or {}
         val.agregar(validacion, usuario, datos.get("problema", ""), datos.get("solucion", ""), datos.get("jerarquia", "rediseno"),
                     datos.get("responsable", ""), datos.get("fecha_compromiso", ""))
+    elif accion == "ajustar_residual":
+        datos = valores or {}
+        if "riesgo_residual_proyectado" not in datos:
+            raise ValueError("Indica riesgo_residual_proyectado (1–15) en --campo.")
+        val.ajustar_residual(validacion, usuario, int(datos["riesgo_residual_proyectado"]), comentario)
+    elif accion == "limpiar_residual":
+        val.limpiar_residual(validacion, usuario, comentario)
     elif accion == "aprobar_informe":
-        val.aprobar_informe(validacion, usuario, resultado.get("reba", {}).get("nivel_accion"), comentario)
+        reba = resultado.get("reba") or {}
+        val.aprobar_informe(
+            validacion, usuario, reba.get("nivel_accion"), comentario,
+            puntaje_reba=(reba.get("final") or {}).get("reportado"),
+        )
     else:
         raise ValueError(f"Acción desconocida: {accion}")
     val.guardar(carpeta, validacion)
@@ -333,7 +344,7 @@ def main() -> None:
     informe.add_argument("caso", type=Path, help="carpeta del caso o de out/<caso>")
     validar = subcomandos.add_parser("validar", help="registra una decisión del especialista en la bitácora")
     validar.add_argument("caso", type=Path, help="carpeta del caso o de out/<caso>")
-    validar.add_argument("accion", choices=("aprobar", "rechazar", "reabrir", "editar", "agregar", "aprobar_informe"))
+    validar.add_argument("accion", choices=("aprobar", "rechazar", "reabrir", "editar", "agregar", "ajustar_residual", "limpiar_residual", "aprobar_informe"))
     validar.add_argument("--usuario", required=True, help="nombre del especialista")
     validar.add_argument("--rec", help="ID de la recomendación, p. ej. R-TRONCO-ING")
     validar.add_argument("--campo", action="append", default=[], metavar="CAMPO=VALOR", help="campo a editar/agregar (repetible)")

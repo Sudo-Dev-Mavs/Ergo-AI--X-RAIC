@@ -33,7 +33,11 @@ def cargar_estado(carpeta: Path, config: RebaConfig) -> dict[str, Any]:
 
     resultado = json.loads((carpeta / "resultado.json").read_text(encoding="utf-8"))
     validacion = cargar(carpeta) or {"estado_informe": "borrador", "recomendaciones": resultado.get("recomendaciones", []), "bitacora": []}
-    residual = calcular_residual(resultado.get("mediciones_reba", {}), resultado.get("contexto", {}), validacion["recomendaciones"], config)
+    override = validacion.get("riesgo_residual_proyectado")
+    residual = calcular_residual(
+        resultado.get("mediciones_reba", {}), resultado.get("contexto", {}), validacion["recomendaciones"], config,
+        override_residual=int(override) if override is not None else None,
+    )
     return {"resultado": resultado, "validacion": validacion, "residual": residual}
 
 
@@ -160,7 +164,9 @@ def generar_informe(carpeta: Path, config: RebaConfig) -> Path:
     reduccion = residual.get("reduccion_puntos")
     tiempo = (resultado.get("tiempos_s") or {}).get("analisis_total")
     minutos_validacion = _minutos_validacion(validacion)
-    bloqueos = [] if aprobado else bloqueos_aprobacion(validacion, reba.get("nivel_accion"))
+    bloqueos = [] if aprobado else bloqueos_aprobacion(
+        validacion, reba.get("nivel_accion"), (reba.get("final") or {}).get("reportado"),
+    )
     pendientes = resultado.get("pendientes_manuales", [])
     sello = (f"<div class='sello ok'>APROBADO por {escape(validacion.get('aprobado_por') or '')} · {escape(validacion.get('aprobado_en') or '')}</div>"
              if aprobado else "<div class='sello borrador'>BORRADOR · pendiente de validación del especialista</div>")

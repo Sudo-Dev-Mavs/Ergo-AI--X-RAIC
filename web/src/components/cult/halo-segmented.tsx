@@ -113,63 +113,61 @@ export function HaloSegmented({
     }
   }, [measureThumb])
 
+  /** Modo industrial (translucent=false): grupo denso estilo software de planta, no píldoras móviles. */
+  const industrial = !translucent
+  const radio = industrial ? "rounded-md" : "rounded-full"
+
   return (
     <div
       className={cn(
-        "relative inline-flex max-w-full rounded-full p-px",
+        "relative inline-flex max-w-full p-px",
+        radio,
         className
       )}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
-        <motion.div
-          animate={{
-            opacity: translucent ? 0.72 : 0.5,
-          }}
-          className="absolute inset-x-0 bottom-0 h-1/2"
-          transition={{ duration: 0.25, ease: "easeOut" }}
-        >
+      {!industrial && (
+        <div className={cn("pointer-events-none absolute inset-0 overflow-hidden", radio)}>
           <motion.div
-            animate={{ left: ["-5%", "75%", "-5%"] }}
-            className="-bottom-4 absolute h-14 w-44 blur-xl"
-            style={{
-              background:
-                "linear-gradient(90deg, #13233b, #3a4c66, #8a99ad, #13233b)",
-            }}
-            transition={{
-              duration: reduceMotion ? 0.01 : 6,
-              ease: "easeInOut",
-              repeat: reduceMotion ? 0 : Number.POSITIVE_INFINITY,
-            }}
-          />
-          <motion.div
-            animate={{ left: ["65%", "10%", "65%"] }}
-            className="-bottom-3 absolute h-11 w-36 blur-lg"
-            style={{
-              background: "linear-gradient(90deg, #5b6776, #c8d0d8, #13233b)",
-            }}
-            transition={{
-              duration: reduceMotion ? 0.01 : 5,
-              ease: "easeInOut",
-              repeat: reduceMotion ? 0 : Number.POSITIVE_INFINITY,
-            }}
-          />
-        </motion.div>
-      </div>
+            animate={{ opacity: 0.72 }}
+            className="absolute inset-x-0 bottom-0 h-1/2"
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <motion.div
+              animate={{ left: ["-5%", "75%", "-5%"] }}
+              className="-bottom-4 absolute h-14 w-44 blur-xl"
+              style={{ background: "linear-gradient(90deg, #13233b, #3a4c66, #8a99ad, #13233b)" }}
+              transition={{
+                duration: reduceMotion ? 0.01 : 6,
+                ease: "easeInOut",
+                repeat: reduceMotion ? 0 : Number.POSITIVE_INFINITY,
+              }}
+            />
+          </motion.div>
+        </div>
+      )}
 
       <div
         className={cn(
-          "relative rounded-full border border-border/90",
-          "shadow-[0_1px_0_rgba(255,255,255,0.1)_inset,0_1px_2px_rgba(0,0,0,0.04),0_4px_14px_rgba(0,0,0,0.05)]",
-          "dark:border-border dark:shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_2px_rgba(0,0,0,0.35),0_4px_20px_rgba(0,0,0,0.35)]",
-          translucent && "backdrop-blur-xl backdrop-saturate-150"
+          "relative border",
+          radio,
+          industrial
+            ? "border-slate-200 bg-slate-100 shadow-none"
+            : cn(
+                "border-border/90",
+                "shadow-[0_1px_0_rgba(255,255,255,0.1)_inset,0_1px_2px_rgba(0,0,0,0.04),0_4px_14px_rgba(0,0,0,0.05)]",
+                "backdrop-blur-xl backdrop-saturate-150",
+              ),
         )}
-        style={{
-          background: translucent
-            ? "linear-gradient(to bottom, color-mix(in oklch, var(--card) 82%, transparent) 0%, color-mix(in oklch, var(--card) 70%, transparent) 100%)"
-            : "linear-gradient(to bottom, var(--card) 0%, color-mix(in oklch, var(--card) 94%, var(--muted)) 100%)",
-        }}
+        style={
+          industrial
+            ? undefined
+            : {
+                background:
+                  "linear-gradient(to bottom, color-mix(in oklch, var(--card) 82%, transparent) 0%, color-mix(in oklch, var(--card) 70%, transparent) 100%)",
+              }
+        }
       >
-        <div className="relative p-1" ref={trackRef}>
+        <div className={cn("relative", industrial ? "p-0.5" : "p-1")} ref={trackRef}>
           <motion.div
             animate={{
               x: thumb.width > 0 ? thumb.x : 0,
@@ -177,12 +175,14 @@ export function HaloSegmented({
             }}
             aria-hidden
             className={cn(
-              "pointer-events-none absolute top-1 right-auto bottom-1 left-0 rounded-full",
-              "border border-border/70",
-              "bg-gradient-to-b from-background/95 to-muted/40",
-              "shadow-[0_1px_0_rgba(255,255,255,0.12)_inset,0_2px_8px_rgba(0,0,0,0.06)]",
-              "dark:border-white/10 dark:from-card/95 dark:to-muted/25",
-              "dark:shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_4px_12px_rgba(0,0,0,0.35)]"
+              "pointer-events-none absolute right-auto left-0",
+              industrial
+                ? "top-0.5 bottom-0.5 rounded-[5px] border border-[#003876]/40 bg-[#003876] shadow-none"
+                : cn(
+                    "top-1 bottom-1 rounded-full border border-border/70",
+                    "bg-gradient-to-b from-background/95 to-muted/40",
+                    "shadow-[0_1px_0_rgba(255,255,255,0.12)_inset,0_2px_8px_rgba(0,0,0,0.06)]",
+                  ),
             )}
             initial={false}
             transition={reduceMotion ? { duration: 0 } : layoutSpring}
@@ -203,12 +203,19 @@ export function HaloSegmented({
             {items.map((item) => (
               <Toggle
                 className={cn(
-                  "relative flex min-h-9 shrink-0 flex-auto items-center justify-center whitespace-nowrap rounded-full px-3.5 py-2",
-                  "font-medium text-muted-foreground text-sm tracking-tight antialiased",
-                  "outline-none transition-colors duration-200 ease-out",
-                  "focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  "relative flex shrink-0 flex-auto items-center justify-center whitespace-nowrap",
+                  "font-medium tracking-tight antialiased outline-none transition-colors duration-200 ease-out",
+                  "focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1",
                   "disabled:pointer-events-none disabled:opacity-50",
-                  "aria-pressed:text-foreground"
+                  industrial
+                    ? cn(
+                        "min-h-8 rounded-[5px] px-3 py-1.5 text-[13px] text-slate-600",
+                        "aria-pressed:text-white",
+                      )
+                    : cn(
+                        "min-h-9 rounded-full px-3.5 py-2 text-muted-foreground text-sm",
+                        "aria-pressed:text-foreground",
+                      ),
                 )}
                 disabled={item.disabled}
                 key={item.value}

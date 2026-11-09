@@ -1,9 +1,10 @@
 import { Camera, ImagePlus, Upload, VideoOff, X } from "lucide-react"
-import { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from "react"
+import { useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from "react"
 
 import { HaloSegmented } from "@/components/cult/halo-segmented"
 import type { Vista } from "@/lib/api"
 import type { Camara } from "@/lib/camaras"
+import { esImagenErgo, imagenDesdeClipboard, normalizarImagenErgo } from "@/lib/imagenes"
 import { cn } from "@/lib/utils"
 
 export type Fuente = { modo: "archivo" } | { modo: "camara"; deviceId: string | null }
@@ -25,13 +26,15 @@ export function VistaFuente({ vista, titulo, ayuda, principal, fuente, onFuente,
   const idSelect = useId()
   const camaraConectada = fuente.modo === "camara" && fuente.deviceId && camaras.some((c) => c.deviceId === fuente.deviceId)
 
-  // Cuatro filas fijas (encabezado, selector de cámara, recuadro, ayuda). En escritorio las tres vistas
-  // comparten esas filas con CSS subgrid, así los recuadros quedan al mismo nivel aunque un encabezado
-  // ocupe dos líneas o solo una vista use cámara.
   return (
     <div className="flex min-w-0 flex-col gap-2 md:row-span-4 md:grid md:grid-rows-subgrid">
       <div className="flex flex-col items-start gap-1.5">
-        <p className="text-[16px] font-semibold">{titulo}{principal && <span className="ml-1.5 text-[13px] font-normal text-graphite">principal</span>}</p>
+        <p className="text-[16px] font-semibold text-jabil">
+          {titulo}
+          {principal
+            ? <span className="etiqueta-estado ml-2 bg-jabil text-white">Obligatoria</span>
+            : <span className="ml-2 text-[12px] font-medium text-graphite">Recomendada</span>}
+        </p>
         <HaloSegmented translucent={false} className="overflow-x-auto" value={fuente.modo}
           onValueChange={(modo) => onFuente(modo === "camara" ? { modo: "camara", deviceId: fuente.modo === "camara" ? fuente.deviceId : camaras[0]?.deviceId ?? null } : { modo: "archivo" })}
           items={[{ value: "archivo", label: <span className="flex items-center gap-1.5"><Upload className="size-3.5" />Archivo</span> },
@@ -53,9 +56,9 @@ export function VistaFuente({ vista, titulo, ayuda, principal, fuente, onFuente,
       </div>
 
       {fuente.modo === "archivo" ? (
-        <RanuraArchivo titulo={titulo} archivo={archivo} onArchivo={onArchivo} />
+        <RanuraArchivo titulo={titulo} archivo={archivo} onArchivo={onArchivo} principal={principal} />
       ) : (
-        <Marco>
+        <Marco principal={principal}>
           {camaraConectada && fuente.deviceId
             ? <EnVivo key={fuente.deviceId} deviceId={fuente.deviceId} abrir={abrir} vista={vista} />
             : <Vacio icono={<VideoOff className="size-6 text-graphite" strokeWidth={1.5} />} texto={camaras.length ? "Elige qué cámara cubre esta vista" : "Detecta las cámaras arriba"} />}
@@ -70,12 +73,18 @@ export function VistaFuente({ vista, titulo, ayuda, principal, fuente, onFuente,
   )
 }
 
-function Marco({ children, className }: { children: ReactNode; className?: string }) {
+function Marco({ children, className, drop, principal }: { children: ReactNode; className?: string; drop?: boolean; principal?: boolean }) {
   return (
-    <div className={cn("relative aspect-[4/3] overflow-hidden rounded-[10px] bg-ink/[0.04] outline outline-1 outline-rule", className)}>
+    <div className={cn(
+      "relative aspect-[4/3] overflow-hidden rounded-[12px]",
+      drop ? "drop-zona" : "bg-slate-50 outline outline-rule",
+      !drop && (principal ? "outline-[3px] outline-jabil" : "outline-1"),
+      drop && principal && "border-jabil border-[3px] border-solid",
+      className,
+    )}>
       {children}
-      {(["top-2 left-2 border-t-2 border-l-2", "top-2 right-2 border-t-2 border-r-2", "bottom-2 left-2 border-b-2 border-l-2", "right-2 bottom-2 border-r-2 border-b-2"] as const).map((pos) => (
-        <span key={pos} aria-hidden className={cn("pointer-events-none absolute size-4 border-ink/70", pos)} />
+      {(["top-2.5 left-2.5 border-t-2 border-l-2", "top-2.5 right-2.5 border-t-2 border-r-2", "bottom-2.5 left-2.5 border-b-2 border-l-2", "right-2.5 bottom-2.5 border-r-2 border-b-2"] as const).map((pos) => (
+        <span key={pos} aria-hidden className={cn("pointer-events-none absolute size-4 border-jabil/70", pos)} />
       ))}
     </div>
   )
@@ -83,9 +92,9 @@ function Marco({ children, className }: { children: ReactNode; className?: strin
 
 function Vacio({ icono, texto }: { icono: ReactNode; texto: string }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-2.5 px-4 text-center">
       {icono}
-      <span className="text-[13px] text-graphite">{texto}</span>
+      <span className="max-w-[22ch] text-[13px] font-medium text-ink-soft">{texto}</span>
     </div>
   )
 }
@@ -122,10 +131,18 @@ function EnVivo({ deviceId, abrir, vista }: { deviceId: string; abrir: (id: stri
   )
 }
 
-function RanuraArchivo({ titulo, archivo, onArchivo }: { titulo: string; archivo: File | null; onArchivo: (archivo: File | null) => void }) {
+function RanuraArchivo({ titulo, archivo, onArchivo, principal }: {
+  titulo: string
+  archivo: File | null
+  onArchivo: (archivo: File | null) => void
+  principal?: boolean
+}) {
   const id = useId()
+  const zonaRef = useRef<HTMLDivElement>(null)
   const [vista, setVista] = useState<string | null>(null)
   const [encima, setEncima] = useState(false)
+  const [activa, setActiva] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   useEffect(() => {
     if (!archivo) {
@@ -137,25 +154,103 @@ function RanuraArchivo({ titulo, archivo, onArchivo }: { titulo: string; archivo
     return () => URL.revokeObjectURL(url)
   }, [archivo])
 
+  async function aplicarArchivo(bruto: File | null) {
+    setAviso(null)
+    if (!bruto) {
+      onArchivo(null)
+      return
+    }
+    if (!esImagenErgo(bruto) && !bruto.type.startsWith("image/")) {
+      setAviso("Solo JPG o PNG")
+      return
+    }
+    const normal = await normalizarImagenErgo(bruto, bruto.name || `${titulo.toLowerCase()}.png`)
+    if (!normal) {
+      setAviso("No se pudo usar esa imagen (usa JPG/PNG)")
+      return
+    }
+    onArchivo(normal)
+  }
+
   const soltar = (evento: DragEvent) => {
+    // Evita que el contenedor padre reasigne la foto a otra vista.
     evento.preventDefault()
+    evento.stopPropagation()
     setEncima(false)
     const primero = evento.dataTransfer.files[0]
-    if (primero && /image\/(jpeg|png)/.test(primero.type)) onArchivo(primero)
+    void aplicarArchivo(primero ?? null)
+  }
+
+  const pegarAqui = (evento: ClipboardEvent) => {
+    const hayImagen = [...(evento.clipboardData?.items ?? [])].some((i) => i.kind === "file" && i.type.startsWith("image/"))
+    if (!hayImagen) return
+    evento.preventDefault()
+    evento.stopPropagation()
+    void imagenDesdeClipboard(evento.clipboardData).then((img) => {
+      if (img) void aplicarArchivo(img)
+    })
   }
 
   return (
-    <div className="relative">
-      <label htmlFor={id} onDragOver={(e) => { e.preventDefault(); setEncima(true) }} onDragLeave={() => setEncima(false)} onDrop={soltar} className="block cursor-pointer">
-        <Marco className={cn("transition-[outline-color]", encima ? "outline-2 outline-ink" : "hover:outline-ink")}>
+    <div
+      ref={zonaRef}
+      className="relative"
+      tabIndex={0}
+      onFocus={() => setActiva(true)}
+      onBlur={() => setActiva(false)}
+      onPaste={(e) => void pegarAqui(e)}
+      data-ranura-foto="1"
+      aria-label={`Zona de foto ${titulo}. Arrastra, elige archivo o pega con Ctrl+V.`}
+    >
+      <label
+        htmlFor={id}
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setEncima(true) }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; setEncima(true) }}
+        onDragLeave={(e) => {
+          // Solo apagar si salimos de la zona (no al entrar a hijos).
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setEncima(false)
+        }}
+        onDrop={soltar}
+        className="block cursor-pointer outline-none"
+      >
+        <Marco
+          drop
+          principal={principal}
+          className={cn(
+            "transition-[border-color,background,box-shadow]",
+            encima && "drop-activo",
+            activa && !encima && "ring-2 ring-jabil-cyan ring-offset-1",
+          )}
+        >
           {vista
-            ? <img src={vista} alt={`Vista ${titulo.toLowerCase()} seleccionada`} className="h-full w-full object-contain" />
-            : <Vacio icono={<ImagePlus className="size-6 text-graphite" strokeWidth={1.5} />} texto="Arrastra o elige una foto" />}
+            ? <img src={vista} alt={`Vista ${titulo.toLowerCase()} seleccionada`} className="pointer-events-none h-full w-full object-contain" />
+            : (
+              <Vacio
+                icono={<ImagePlus className="size-10 text-jabil" strokeWidth={1.5} />}
+                texto={encima ? "Suelta la foto aquí" : activa ? "Ctrl+V para pegar" : "Arrastra, elige o Ctrl+V"}
+              />
+            )}
         </Marco>
-        <input id={id} type="file" accept="image/jpeg,image/png" className="sr-only" onChange={(e) => onArchivo(e.target.files?.[0] ?? null)} />
+        <input
+          id={id}
+          type="file"
+          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null
+            void aplicarArchivo(f)
+            e.target.value = ""
+          }}
+        />
       </label>
+      {aviso && <p className="mt-1 text-[12px] font-medium text-[var(--riesgo-muy-alto)]">{aviso}</p>}
       {archivo && (
-        <button type="button" onClick={() => onArchivo(null)} className="absolute top-2 right-2 rounded-md bg-sheet/90 p-1 text-graphite hover:text-ink" aria-label={`Quitar foto ${titulo}`}>
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchivo(null) }}
+          className="absolute top-2 right-2 z-10 rounded-md bg-sheet/90 p-1 text-graphite hover:text-ink"
+          aria-label={`Quitar foto ${titulo}`}
+        >
           <X className="size-4" />
         </button>
       )}

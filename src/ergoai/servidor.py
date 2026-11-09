@@ -103,7 +103,11 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         entrada = carpeta_entrada(caso_id)
         return {
             **datos,
-            "bloqueos": [] if validacion.get("estado_informe") == "aprobado" else val.bloqueos_aprobacion(validacion, resultado.get("reba", {}).get("nivel_accion")),
+            "bloqueos": [] if validacion.get("estado_informe") == "aprobado" else val.bloqueos_aprobacion(
+                validacion,
+                resultado.get("reba", {}).get("nivel_accion"),
+                (resultado.get("reba", {}).get("final") or {}).get("reportado"),
+            ),
             "bitacora_integra": val.verificar_bitacora(validacion),
             "imagenes": [vista for vista in VISTAS if (carpeta / f"{vista}_angulos.png").is_file()],
             "fotos": [vista for vista in VISTAS if any((entrada / f"{vista}{ext}").is_file() for ext in EXTENSIONES_IMAGEN)],
@@ -130,6 +134,8 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                 "realizado_por": contexto.get("realizado_por"), "fecha_analisis": resultado.get("fecha_analisis"),
                 "reba": reba.get("final", {}).get("reportado"), "nivel_riesgo": reba.get("nivel_riesgo"), "nivel_accion": reba.get("nivel_accion"),
                 "residual": residual["residual"]["reba"], "nivel_residual": residual["residual"]["nivel_riesgo"],
+                "origen_residual": residual.get("origen_residual", "agente"),
+                "estado_validacion": val.estado_validacion_caso(validacion),
                 "por_validar": sum(1 for rec in vigentes if rec.get("estado") == "propuesta"),
                 "recomendaciones": len(vigentes), "estado_informe": validacion.get("estado_informe", "borrador"),
                 "pendientes_manuales": len(resultado.get("pendientes_manuales", [])),
