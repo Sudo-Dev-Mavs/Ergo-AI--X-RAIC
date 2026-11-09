@@ -16,6 +16,8 @@ export interface ResumenCaso {
   nivel_residual: string | null
   reba_rango?: RangoReba | null
   residual_rango?: RangoReba | null
+  origen_residual?: "agente" | "especialista"
+  estado_validacion?: "pendiente" | "aprobado" | "rechazado" | "modificado"
   por_validar: number
   recomendaciones: number
   estado_informe: "borrador" | "aprobado"
@@ -111,6 +113,8 @@ export interface EstadoCaso {
   residual: {
     inicial: ResumenRiesgo
     residual: ResumenRiesgo
+    residual_agente?: ResumenRiesgo
+    origen_residual?: "agente" | "especialista"
     reduccion_puntos: number | null
     reduccion_pct: number | null
     recomendaciones_aplicadas: string[]
@@ -120,6 +124,87 @@ export interface EstadoCaso {
   bitacora_integra: boolean
   imagenes: Vista[]
   fotos: Vista[]
+}
+
+/** Compatibilidad con casos antiguos (otro esquema de recomendaciones / contexto ausente). */
+export function normalizarEstadoCaso(bruto: EstadoCaso): EstadoCaso {
+  const resultado = bruto.resultado ?? ({} as EstadoCaso["resultado"])
+  const validacion = bruto.validacion ?? ({} as EstadoCaso["validacion"])
+  const residual = bruto.residual ?? {
+    inicial: { reba: null, nivel_riesgo: null, nivel_accion: null, bandas: {} },
+    residual: { reba: null, nivel_riesgo: null, nivel_accion: null, bandas: {} },
+    reduccion_puntos: null, reduccion_pct: null, recomendaciones_aplicadas: [], nota: "",
+  }
+  const recs = (validacion.recomendaciones ?? []).map((rec) => normalizarRecomendacion(rec as Recomendacion & Record<string, unknown>))
+  const reba = resultado.reba ?? {
+    grupo_a: {}, grupo_b: { L: {}, R: {} }, actividad: 0,
+    final: { L: null, R: null, reportado: null, lado: null },
+    nivel_riesgo: null, nivel_accion: null,
+  }
+  return {
+    ...bruto,
+    resultado: {
+      ...resultado,
+      contexto: resultado.contexto ?? {},
+      angulos: resultado.angulos ?? [],
+      mediciones_reba: resultado.mediciones_reba ?? {},
+      pendientes_manuales: resultado.pendientes_manuales ?? [],
+      reba: {
+        ...reba,
+        final: reba.final ?? { L: null, R: null, reportado: null, lado: null },
+        grupo_b: reba.grupo_b ?? { L: {}, R: {} },
+      },
+    },
+    validacion: {
+      estado_informe: validacion.estado_informe ?? "borrador",
+      aprobado_por: validacion.aprobado_por ?? null,
+      aprobado_en: validacion.aprobado_en ?? null,
+      generado_en: validacion.generado_en,
+      recomendaciones: recs,
+      bitacora: validacion.bitacora ?? [],
+    },
+    residual: {
+      ...residual,
+      inicial: residual.inicial ?? { reba: null, nivel_riesgo: null, nivel_accion: null, bandas: {} },
+      residual: residual.residual ?? { reba: null, nivel_riesgo: null, nivel_accion: null, bandas: {} },
+      recomendaciones_aplicadas: residual.recomendaciones_aplicadas ?? [],
+      nota: residual.nota ?? "",
+    },
+    bloqueos: bruto.bloqueos ?? [],
+    bitacora_integra: bruto.bitacora_integra ?? true,
+    imagenes: bruto.imagenes ?? [],
+    fotos: bruto.fotos ?? [],
+  }
+}
+
+function normalizarRecomendacion(rec: Recomendacion & Record<string, unknown>): Recomendacion {
+  const jerarquiaCruda = String(rec.jerarquia ?? rec.tipo_control ?? "rediseno")
+  const jerarquia = (["ingenieria", "rediseno", "administrativa"].includes(jerarquiaCruda)
+    ? jerarquiaCruda
+    : "rediseno") as Jerarquia
+  const refs = Array.isArray(rec.referencias)
+    ? rec.referencias
+    : typeof rec.fuente === "string" && rec.fuente
+      ? [rec.fuente]
+      : []
+  return {
+    id: String(rec.id ?? "REC"),
+    factor: String(rec.factor ?? rec.segmento ?? "general"),
+    problema: String(rec.problema ?? ""),
+    solucion: String(rec.solucion ?? ""),
+    jerarquia,
+    referencias: refs,
+    efecto: (rec.efecto as Recomendacion["efecto"]) ?? {},
+    prioridad: String(rec.prioridad ?? "normal"),
+    estado: (["propuesta", "aprobada", "rechazada", "obsoleta"].includes(String(rec.estado))
+      ? rec.estado
+      : "propuesta") as EstadoRec,
+    responsable: String(rec.responsable ?? ""),
+    fecha_compromiso: String(rec.fecha_compromiso ?? ""),
+    comentario: String(rec.comentario ?? ""),
+    origen: rec.origen === "especialista" ? "especialista" : "agente",
+    delta_reba: typeof rec.delta_reba === "number" ? rec.delta_reba : null,
+  }
 }
 
 export interface PrivacidadVista {
@@ -172,14 +257,24 @@ const json = (cuerpo: unknown): RequestInit => ({
   body: JSON.stringify(cuerpo),
 })
 
+async function pedirCaso(url: string, init?: RequestInit): Promise<EstadoCaso> {
+  return normalizarEstadoCaso(await pedir<EstadoCaso>(url, init))
+}
+
 export const api = {
   casos: () => pedir<ResumenCaso[]>("/api/casos"),
-  caso: (id: string) => pedir<EstadoCaso>(`/api/casos/${encodeURIComponent(id)}`),
-  crear: (formulario: FormData) => pedir<EstadoCaso>("/api/casos", { method: "POST", body: formulario }),
+  caso: (id: string) => pedirCaso(`/api/casos/${encodeURIComponent(id)}`),
+  crear: (formulario: FormData) => pedirCaso("/api/casos", { method: "POST", body: formulario }),
   validar: (id: string, cuerpo: { usuario: string; accion: string; rec_id?: string; valores?: Record<string, string>; comentario?: string }) =>
-    pedir<EstadoCaso>(`/api/casos/${encodeURIComponent(id)}/validacion`, json(cuerpo)),
+    pedirCaso(`/api/casos/${encodeURIComponent(id)}/validacion`, json(cuerpo)),
+  ajustarResidual: (id: string, usuario: string, puntaje: number, comentario: string) =>
+    pedirCaso(`/api/casos/${encodeURIComponent(id)}/validacion`, json({
+      usuario, accion: "ajustar_residual", valores: { riesgo_residual_proyectado: String(puntaje) }, comentario,
+    })),
+  limpiarResidual: (id: string, usuario: string, comentario = "") =>
+    pedirCaso(`/api/casos/${encodeURIComponent(id)}/validacion`, json({ usuario, accion: "limpiar_residual", comentario })),
   corregir: (id: string, cuerpo: { usuario: string; overrides: Record<string, number | null>; comentario?: string }) =>
-    pedir<EstadoCaso>(`/api/casos/${encodeURIComponent(id)}/correcciones`, json(cuerpo)),
+    pedirCaso(`/api/casos/${encodeURIComponent(id)}/correcciones`, json(cuerpo)),
   archivo: (id: string, nombre: string, version?: string) =>
     `/api/casos/${encodeURIComponent(id)}/archivos/${nombre}${version ? `?v=${encodeURIComponent(version)}` : ""}`,
   foto: (id: string, vista: Vista) => `/api/casos/${encodeURIComponent(id)}/fotos/${vista}`,

@@ -405,7 +405,8 @@ class AplicacionErgoAI:
         if aprobado:
             partes.append(f"Aprobado por {validacion.get('aprobado_por')} el {validacion.get('aprobado_en')}.")
         else:
-            bloqueos = bloqueos_aprobacion(validacion, nivel)
+            reba_final = (self.estado_caso["resultado"].get("reba") or {}).get("final") or {}
+            bloqueos = bloqueos_aprobacion(validacion, nivel, reba_final.get("reportado"))
             partes.append("Listo para aprobar." if not bloqueos else "Falta: " + "; ".join(bloqueos[:4]) + (" …" if len(bloqueos) > 4 else ""))
         self.lbl_val_estado.configure(text=self._t("  ".join(partes)))
         self.arbol_bitacora.delete(*self.arbol_bitacora.get_children())

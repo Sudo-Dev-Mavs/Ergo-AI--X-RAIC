@@ -6,7 +6,7 @@ import copy
 from typing import Any, Iterable
 
 from .config import RebaConfig
-from .reba import calcular_reba
+from .reba import calcular_reba, nivel_riesgo
 
 ESTADOS_EXCLUIDOS = ("rechazada", "obsoleta")
 # Medidas cuyo objetivo es un valor dentro de un rango (no "menos es mejor").
@@ -71,22 +71,46 @@ def _resumen(reba: dict[str, Any]) -> dict[str, Any]:
 
 def calcular_residual(
     mediciones: dict[str, float | None], contexto: dict[str, Any], recomendaciones: list[dict[str, Any]], config: RebaConfig,
+    override_residual: int | None = None,
 ) -> dict[str, Any]:
-    """Compara el REBA inicial contra el esperado tras aplicar las recomendaciones vigentes."""
+    """Compara el REBA inicial contra el esperado tras aplicar las recomendaciones vigentes.
+
+    Si ``override_residual`` viene del especialista, reemplaza el residual del agente y deja
+    ambos valores visibles para el comparador Antes/Después.
+    """
 
     inicial = calcular_reba(mediciones, contexto, config).a_diccionario()
     aplicadas = [rec for rec in recomendaciones if cuenta_para_residual(rec)]
     nuevas, nuevo_contexto = aplicar_efectos(mediciones, contexto, aplicadas)
     residual = calcular_reba(nuevas, nuevo_contexto, config).a_diccionario()
-    antes, despues = inicial["final"]["reportado"], residual["final"]["reportado"]
+    agente = _resumen(residual)
+    origen = "agente"
+    if override_residual is not None:
+        if not 1 <= override_residual <= 15:
+            raise ValueError("El residual proyectado debe estar entre 1 y 15.")
+        nivel = nivel_riesgo(override_residual)
+        residual_resumen = {
+            "reba": override_residual,
+            "nivel_riesgo": nivel.nombre,
+            "nivel_accion": nivel.nivel_accion,
+            "rango": None,  # valor exacto fijado por el especialista
+            "bandas": agente["bandas"],
+        }
+        origen = "especialista"
+    else:
+        residual_resumen = agente
+    antes, despues = inicial["final"]["reportado"], residual_resumen["reba"]
     return {
         "inicial": _resumen(inicial),
-        "residual": _resumen(residual),
+        "residual": residual_resumen,
+        "residual_agente": agente,
+        "origen_residual": origen,
         "reduccion_puntos": antes - despues if antes is not None and despues is not None else None,
         "reduccion_pct": round(100 * (antes - despues) / antes, 1) if antes and despues is not None else None,
         "recomendaciones_aplicadas": [rec["id"] for rec in aplicadas],
         "nota": "Estimación: supone que cada control lleva el segmento al valor objetivo declarado en su efecto; "
-                "el especialista debe confirmarlo con una nueva fotografía después de implementar.",
+                "el especialista debe confirmarlo con una nueva fotografía después de implementar."
+                + (" Residual ajustado manualmente por el especialista." if origen == "especialista" else ""),
     }
 
 

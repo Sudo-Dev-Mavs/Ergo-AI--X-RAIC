@@ -81,8 +81,11 @@ def sincronizar(carpeta: Path, resultado: dict[str, Any]) -> dict[str, Any]:
     nuevas = {rec["id"]: rec for rec in resultado.get("recomendaciones", [])}
     validacion = cargar(carpeta)
     if validacion is None:
-        validacion = {"caso_id": resultado.get("caso_id"), "estado_informe": "borrador", "aprobado_por": None,
-                      "aprobado_en": None, "generado_en": _ahora(), "recomendaciones": list(nuevas.values()), "bitacora": []}
+        validacion = {
+            "caso_id": resultado.get("caso_id"), "estado_informe": "borrador", "aprobado_por": None,
+            "aprobado_en": None, "generado_en": _ahora(), "recomendaciones": list(nuevas.values()), "bitacora": [],
+            "riesgo_residual_proyectado": None, "riesgo_residual_origen": "agente",
+        }
         registrar(validacion, AGENTE, "generar", comentario=f"{len(nuevas)} recomendaciones propuestas")
         guardar(carpeta, validacion)
         return validacion
@@ -183,22 +186,72 @@ def agregar(validacion: dict[str, Any], usuario: str, problema: str, solucion: s
     return rec_id
 
 
-def bloqueos_aprobacion(validacion: dict[str, Any], nivel_accion: int | None) -> list[str]:
+def bloqueos_aprobacion(validacion: dict[str, Any], nivel_accion: int | None, puntaje_reba: int | None = None) -> list[str]:
     """Motivos por los que todavía no se puede aprobar el informe."""
 
     vigentes = [rec for rec in validacion["recomendaciones"] if rec.get("estado") != "obsoleta"]
     motivos = [f"{rec['id']} sigue como propuesta" for rec in vigentes if rec.get("estado") == "propuesta"]
     aprobadas = [rec for rec in vigentes if rec.get("estado") == "aprobada"]
-    if nivel_accion is not None and nivel_accion >= 3 and not any(rec.get("jerarquia") in ("ingenieria", "rediseno") for rec in aprobadas):
-        motivos.append("riesgo alto/muy alto: se requiere al menos un control de ingeniería o rediseño aprobado")
+    riesgo_alto = (puntaje_reba is not None and puntaje_reba >= 8) or (nivel_accion is not None and nivel_accion >= 3)
+    if riesgo_alto and not any(rec.get("jerarquia") in ("ingenieria", "rediseno") for rec in aprobadas):
+        motivos.append("riesgo alto/muy alto (REBA ≥ 8): se requiere al menos un control de ingeniería o rediseño aprobado; rotación/pausas no bastan")
     if aprobadas and any(not rec.get("responsable") for rec in aprobadas if rec.get("jerarquia") != "administrativa"):
         motivos.append("hay acciones aprobadas sin responsable asignado")
     return motivos
 
 
-def aprobar_informe(validacion: dict[str, Any], usuario: str, nivel_accion: int | None, comentario: str = "") -> None:
-    motivos = bloqueos_aprobacion(validacion, nivel_accion)
+def aprobar_informe(validacion: dict[str, Any], usuario: str, nivel_accion: int | None, comentario: str = "", puntaje_reba: int | None = None) -> None:
+    motivos = bloqueos_aprobacion(validacion, nivel_accion, puntaje_reba)
     if motivos:
         raise ValueError("No se puede aprobar el informe:\n• " + "\n• ".join(motivos))
     registrar(validacion, usuario, "aprobar_informe", comentario=comentario)
     validacion.update({"estado_informe": "aprobado", "aprobado_por": usuario.strip(), "aprobado_en": validacion["bitacora"][-1]["fecha"]})
+
+
+def ajustar_residual(validacion: dict[str, Any], usuario: str, puntaje: int, comentario: str = "") -> None:
+    """Permite al especialista corregir el residual si el agente fue demasiado optimista."""
+
+    if not isinstance(puntaje, int) or not 1 <= puntaje <= 15:
+        raise ValueError("El riesgo residual proyectado debe ser un entero entre 1 y 15.")
+    if not comentario.strip():
+        raise ValueError("Indica el motivo del ajuste del residual (queda en la bitácora).")
+    antes = validacion.get("riesgo_residual_proyectado")
+    validacion["riesgo_residual_proyectado"] = puntaje
+    validacion["riesgo_residual_origen"] = "especialista"
+    registrar(
+        validacion, usuario, "ajustar_residual",
+        cambios={"riesgo_residual_proyectado": {"antes": antes, "despues": puntaje}},
+        comentario=comentario.strip(),
+    )
+    _a_borrador(validacion, usuario, "ajuste de residual proyectado")
+
+
+def limpiar_residual(validacion: dict[str, Any], usuario: str, comentario: str = "") -> None:
+    """Vuelve al residual calculado automáticamente por el agente."""
+
+    antes = validacion.get("riesgo_residual_proyectado")
+    if antes is None and validacion.get("riesgo_residual_origen") != "especialista":
+        return
+    validacion.pop("riesgo_residual_proyectado", None)
+    validacion["riesgo_residual_origen"] = "agente"
+    registrar(
+        validacion, usuario, "limpiar_residual",
+        cambios={"riesgo_residual_proyectado": {"antes": antes, "despues": None}},
+        comentario=comentario or "se restaura el residual calculado por el agente",
+    )
+    _a_borrador(validacion, usuario, "restaurar residual del agente")
+
+
+def estado_validacion_caso(validacion: dict[str, Any]) -> str:
+    """Mapea el estado del informe/recomendaciones al enum de trazabilidad del dashboard."""
+
+    if validacion.get("estado_informe") == "aprobado":
+        return "aprobado"
+    vigentes = [rec for rec in validacion.get("recomendaciones", []) if rec.get("estado") != "obsoleta"]
+    if any(rec.get("estado") == "rechazada" for rec in vigentes) and all(rec.get("estado") != "propuesta" for rec in vigentes):
+        if any(rec.get("problema_editado") or rec.get("origen") == "especialista" for rec in vigentes):
+            return "modificado"
+        return "rechazado"
+    if any(rec.get("problema_editado") or rec.get("origen") == "especialista" for rec in vigentes):
+        return "modificado"
+    return "pendiente"

@@ -4,11 +4,18 @@ import { showPolishedToast } from "@/components/cult/halo-toast"
 
 /* ---------- Rutas con hash: la app se sirve como archivo local, sin servidor de rutas ---------- */
 
-export type Ruta = { nombre: "casos" } | { nombre: "nueva" } | { nombre: "caso"; id: string }
+export type Ruta =
+  | { nombre: "casos" }
+  | { nombre: "nueva" }
+  | { nombre: "validacion"; id?: string }
+  | { nombre: "caso"; id: string }
 
 function leerRuta(): Ruta {
   const partes = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean)
   if (partes[0] === "nueva") return { nombre: "nueva" }
+  if (partes[0] === "validacion") {
+    return partes[1] ? { nombre: "validacion", id: decodeURIComponent(partes[1]) } : { nombre: "validacion" }
+  }
   if (partes[0] === "caso" && partes[1]) return { nombre: "caso", id: decodeURIComponent(partes[1]) }
   return { nombre: "casos" }
 }
@@ -27,7 +34,11 @@ export function useRuta(): Ruta {
 }
 
 export const ir = (ruta: Ruta) => {
-  window.location.hash = ruta.nombre === "caso" ? `#/caso/${encodeURIComponent(ruta.id)}` : ruta.nombre === "nueva" ? "#/nueva" : "#/"
+  if (ruta.nombre === "caso") window.location.hash = `#/caso/${encodeURIComponent(ruta.id)}`
+  else if (ruta.nombre === "nueva") window.location.hash = "#/nueva"
+  else if (ruta.nombre === "validacion") {
+    window.location.hash = ruta.id ? `#/validacion/${encodeURIComponent(ruta.id)}` : "#/validacion"
+  } else window.location.hash = "#/"
 }
 
 /* ---------- Especialista: toda decisión queda firmada con su nombre ---------- */

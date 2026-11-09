@@ -1,12 +1,12 @@
 import type { Jerarquia, RangoReba, TipoTarea } from "./api"
 
-/** Zonas REBA (Hignett y McAtamney, 2000). El color solo se usa para riesgo. */
+/** Zonas REBA (Hignett y McAtamney, 2000). Semáforo alineado a la regla de negocio Jabil. */
 export const ZONAS = [
   { nivel: "Inapreciable", desde: 1, hasta: 1, color: "var(--riesgo-inapreciable)", accion: "No necesaria" },
   { nivel: "Bajo", desde: 2, hasta: 3, color: "var(--riesgo-bajo)", accion: "Puede ser necesaria" },
-  { nivel: "Medio", desde: 4, hasta: 7, color: "var(--riesgo-medio)", accion: "Necesaria" },
-  { nivel: "Alto", desde: 8, hasta: 10, color: "var(--riesgo-alto)", accion: "Necesaria pronto" },
-  { nivel: "Muy alto", desde: 11, hasta: 15, color: "var(--riesgo-muy-alto)", accion: "Necesaria de inmediato" },
+  { nivel: "Medio", desde: 4, hasta: 7, color: "var(--riesgo-medio)", accion: "Necesaria actuación" },
+  { nivel: "Alto", desde: 8, hasta: 10, color: "var(--riesgo-alto)", accion: "Necesaria actuación pronto" },
+  { nivel: "Muy alto", desde: 11, hasta: 15, color: "var(--riesgo-muy-alto)", accion: "Necesaria actuación inmediata" },
 ] as const
 
 export function colorRiesgo(nivel: string | null | undefined): string {
@@ -15,6 +15,21 @@ export function colorRiesgo(nivel: string | null | undefined): string {
 
 export function accionRiesgo(nivel: string | null | undefined): string {
   return ZONAS.find((zona) => zona.nivel === nivel)?.accion ?? "Datos pendientes"
+}
+
+/** Texto accionable cuando falta REBA (evita “—” / “Pendiente” opacos). */
+export function etiquetaReba(puntaje: number | null | undefined, nivel?: string | null): string {
+  if (puntaje == null) return "Pendiente de cálculo"
+  return nivel ? `${puntaje} · ${nivel}` : String(puntaje)
+}
+
+export function colorPuntoCaso(reba: number | null | undefined): string {
+  if (reba == null) return "var(--riesgo-pendiente)"
+  if (reba >= 11) return "var(--riesgo-muy-alto)"
+  if (reba >= 8) return "var(--riesgo-alto)"
+  if (reba >= 4) return "var(--riesgo-medio)"
+  if (reba >= 2) return "var(--riesgo-bajo)"
+  return "var(--riesgo-inapreciable)"
 }
 
 export const TAREAS: { valor: TipoTarea; etiqueta: string; corta: string }[] = [
@@ -72,6 +87,8 @@ export const NOMBRE_ACCION: Record<string, string> = {
   aprobar_informe: "Aprobó el informe",
   reabrir_informe: "Reabrió el informe",
   corregir_angulo: "Corrigió ángulos",
+  ajustar_residual: "Ajustó el residual proyectado",
+  limpiar_residual: "Restauró el residual del agente",
 }
 
 export function fechaCorta(iso: string | null | undefined): string {

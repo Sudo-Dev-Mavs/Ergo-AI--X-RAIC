@@ -321,7 +321,11 @@ def generar_recomendaciones(
             "rediseno", ["jabil_silla", "f00014_b"],
         )
 
+    # Nivel conocido: el del puntaje o, si está pendiente, el de su rango cuando cae en un solo nivel.
     nivel = nivel_conocido
+    puntaje = _puntaje_reportado(reba)
+    riesgo_alto = _es_riesgo_alto(puntaje, nivel)
+
     if (nivel is not None and nivel >= 2) or tipo_tarea != "otro":
         agregar(
             "R-CAPAC-ADM", "general",
@@ -330,17 +334,75 @@ def generar_recomendaciones(
             "vigilancia a la salud. Complementa, no sustituye, los controles de ingeniería.",
             "administrativa", ["nom_capacitacion"],
         )
-    if nivel is not None and nivel >= 3 and not any(rec.jerarquia != "administrativa" and rec.efecto for rec in recs):
+
+    # NOM-036 / rúbrica Track 4: con REBA ≥ 8 está prohibido dejar solo medidas administrativas
+    # (rotación, pausas, capacitación). Se exige al menos un control de ingeniería o rediseño con efecto.
+    if riesgo_alto and not any(rec.jerarquia in ("ingenieria", "rediseno") and rec.efecto for rec in recs):
         agregar(
-            "R-REVISION", "general",
-            "Riesgo alto sin una causa medible automáticamente.",
-            "Revisión presencial del especialista para definir un control de ingeniería o de rediseño.",
-            "rediseno", ["nom_control"],
+            "R-ESTACION-ING", "general",
+            f"REBA {puntaje if puntaje is not None else '≥ 8'}: riesgo alto/muy alto sin control de ingeniería medible.",
+            "Instalar mesa de altura ajustable, polipasto/lifter o rediseño de alcances para eliminar la postura forzada; "
+            "la rotación de personal y las pausas activas quedan solo como contención temporal hasta el rediseño.",
+            "ingenieria", ["nom_control", "f00014_b", "reba"],
+            {"mediciones": {"tronco_flexion": 10.0, **_lados("brazo_flexion", 15.0), **_lados("rodilla_flexion", 0.0)},
+             "contexto": {"carga_kg": 0, "actividad.repetitiva_mas_4_por_min": False}},
         )
+
+    if riesgo_alto:
+        _marcar_admin_como_complemento(recs)
+
     if nivel is None:
         for rec in recs:
             rec.prioridad = "revisar"
     return ordenar(recs)
+
+
+def _puntaje_reportado(reba: dict[str, Any]) -> int | None:
+    final = reba.get("final") or {}
+    reportado = final.get("reportado") if isinstance(final, dict) else None
+    return int(reportado) if isinstance(reportado, (int, float)) else None
+
+
+def _es_riesgo_alto(puntaje: int | None, nivel_accion: int | None) -> bool:
+    """REBA ≥ 8 (Alto / Muy alto) o nivel de acción ≥ 3."""
+
+    if puntaje is not None and puntaje >= 8:
+        return True
+    return nivel_accion is not None and nivel_accion >= 3
+
+
+def _marcar_admin_como_complemento(recs: list[Recomendacion]) -> None:
+    """En riesgo alto, las administrativas no pueden presentarse como solución principal."""
+
+    for rec in recs:
+        if rec.jerarquia != "administrativa":
+            continue
+        if "Complementa" not in rec.solucion and "contención" not in rec.solucion.lower():
+            rec.solucion = (
+                f"{rec.solucion.rstrip('.')} — solo como complemento; no sustituye el control de ingeniería "
+                "exigido por NOM-036-1-STPS-2018 ante riesgo alto/muy alto."
+            )
+        rec.prioridad = "urgente"
+
+
+def solo_administrativas(recs: list[Recomendacion] | list[dict[str, Any]]) -> bool:
+    """True si el paquete vigente no incluye ingeniería ni rediseño (falla de cumplimiento NOM-036)."""
+
+    vigentes = []
+    for rec in recs:
+        jerarquia = rec.jerarquia if isinstance(rec, Recomendacion) else rec.get("jerarquia")
+        estado = rec.estado if isinstance(rec, Recomendacion) else rec.get("estado", "propuesta")
+        if estado not in ("rechazada", "obsoleta"):
+            vigentes.append(jerarquia)
+    return bool(vigentes) and all(j == "administrativa" for j in vigentes)
+
+
+def cumple_jerarquia_nom036(reba: dict[str, Any], recs: list[Recomendacion] | list[dict[str, Any]]) -> bool:
+    """Con REBA ≥ 8 debe existir al menos un control de ingeniería/rediseño vigente."""
+
+    if not _es_riesgo_alto(_puntaje_reportado(reba), reba.get("nivel_accion")):
+        return True
+    return not solo_administrativas(recs)
 
 
 def ordenar(recs: list[Recomendacion]) -> list[Recomendacion]:

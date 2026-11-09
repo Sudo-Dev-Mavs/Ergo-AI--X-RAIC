@@ -33,8 +33,11 @@ def _recs(configuracion):
 
 
 def test_recomendaciones_priorizan_ingenieria_y_citan_norma(configuracion) -> None:
+    from ergoai.recomendaciones import cumple_jerarquia_nom036, solo_administrativas
+
     reba, recs = _recs(configuracion)
     assert reba["nivel_accion"] >= 3
+    assert reba["final"]["reportado"] >= 8
     ids = [rec["id"] for rec in recs]
     for esperado in ("R-CARGA-ING", "R-TRONCO-ING", "R-MUNECA-ING", "R-TORSION-RED", "R-AGARRE-RED", "R-CARGA-ADM"):
         assert esperado in ids
@@ -44,6 +47,48 @@ def test_recomendaciones_priorizan_ingenieria_y_citan_norma(configuracion) -> No
     carga = next(rec for rec in recs if rec["id"] == "R-CARGA-ING")
     assert any("14 kg" in ref for ref in carga["referencias"])
     assert all(rec["referencias"] for rec in recs)
+    assert cumple_jerarquia_nom036(reba, recs)
+    assert not solo_administrativas(recs)
+
+
+def test_riesgo_alto_nunca_solo_administrativas(configuracion) -> None:
+    """REBA ≥ 8: el motor debe inyectar ingeniería aunque no haya causas medibles claras."""
+
+    from ergoai.recomendaciones import cumple_jerarquia_nom036, generar_recomendaciones
+
+    mediciones = {clave: 0.0 for clave in MEDICIONES}
+    mediciones.update({"tronco_flexion": 5.0, "cuello_flexion": 5.0, "codo_flexion_L": 90.0, "codo_flexion_R": 90.0})
+    contexto = {
+        **CONTEXTO, "carga_kg": 0, "agarre": "bueno", "tipo_tarea": "otro",
+        "actividad": {"estatica_mas_1min": False, "repetitiva_mas_4_por_min": False, "cambios_bruscos_o_base_inestable": False},
+    }
+    reba = calcular_reba(mediciones, contexto, configuracion.reba).a_diccionario()
+    # Fuerza un escenario de riesgo alto sin segmentos fuera de banda típicos.
+    reba["final"]["reportado"] = 9
+    reba["nivel_accion"] = 3
+    reba["nivel_riesgo"] = "Alto"
+    recs = generar_recomendaciones(mediciones, contexto, reba, configuracion.reba)
+    assert any(rec.jerarquia == "ingenieria" and rec.efecto for rec in recs)
+    assert any(rec.id == "R-ESTACION-ING" for rec in recs)
+    assert cumple_jerarquia_nom036(reba, [rec.a_diccionario() for rec in recs])
+
+
+def test_especialista_puede_ajustar_residual(tmp_path, configuracion) -> None:
+    reba, recs = _recs(configuracion)
+    validacion = val.sincronizar(tmp_path, {"caso_id": "x", "recomendaciones": recs})
+    residual = calcular_residual(MEDICIONES, CONTEXTO, recs, configuracion.reba)
+    agente = residual["residual"]["reba"]
+    assert agente is not None
+    override = min(15, agente + 2)
+    val.ajustar_residual(validacion, "Ing. Pérez", override, "el lifter no elimina del todo la flexión")
+    assert validacion["riesgo_residual_proyectado"] == override
+    assert validacion["riesgo_residual_origen"] == "especialista"
+    con_override = calcular_residual(MEDICIONES, CONTEXTO, recs, configuracion.reba, override_residual=override)
+    assert con_override["origen_residual"] == "especialista"
+    assert con_override["residual"]["reba"] == override
+    assert con_override["residual_agente"]["reba"] == agente
+    with pytest.raises(ValueError, match="motivo"):
+        val.ajustar_residual(validacion, "Ing. Pérez", override, "")
 
 
 def test_residual_recalcula_reba_y_excluye_administrativas_y_rechazadas(configuracion) -> None:

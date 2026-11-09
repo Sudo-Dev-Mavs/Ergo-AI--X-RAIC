@@ -140,6 +140,8 @@ export function HaloSwitch({
   const shellBackgroundSolid =
     "linear-gradient(to bottom, color-mix(in oklch, var(--card) 95%, oklch(0.97 0.012 255)) 0%, color-mix(in oklch, var(--card) 93%, oklch(0.96 0.012 255)) 100%)"
 
+  const industrial = !translucent
+
   return (
     <div
       className={cn(
@@ -147,7 +149,7 @@ export function HaloSwitch({
         className
       )}
     >
-      {/* Underglow clipped to the same pill as the shell — avoids a second “rim” vs the track. */}
+      {/* Underglow solo en modo frosted; industrial sin glow borroso. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[9999px]">
         {translucent ? (
           <div
@@ -163,47 +165,45 @@ export function HaloSwitch({
                   "radial-gradient(90% 70% at 50% 100%, rgba(19,35,59,0.28), rgba(58,76,102,0.12) 48%, transparent 62%)",
               }}
             />
-            <div
-              className="absolute inset-0 opacity-70 blur-xl dark:opacity-50"
-              style={{
-                background:
-                  "radial-gradient(70% 55% at 30% 0%, rgba(138,153,173,0.22), rgba(19,35,59,0.08) 45%, transparent 58%)",
-              }}
-            />
           </div>
         ) : null}
       </div>
 
       <div
         className={cn(
-          "relative rounded-[9999px] border border-[color-mix(in_oklch,var(--border)_72%,oklch(0.88_0.012_255))]",
-          "shadow-[0_1px_0_rgba(255,255,255,0.55)_inset,0_1px_2px_rgba(0,0,0,0.03),0_6px_18px_rgba(0,0,0,0.04)]",
-          "dark:border-border/80 dark:shadow-[0_1px_0_rgba(255,255,255,0.05)_inset,0_1px_2px_rgba(0,0,0,0.28),0_6px_22px_rgba(0,0,0,0.32)]",
-          translucent && "backdrop-blur-xl backdrop-saturate-150"
+          "relative rounded-[9999px] border",
+          industrial
+            ? "border-slate-300 shadow-none"
+            : cn(
+                "border-[color-mix(in_oklch,var(--border)_72%,oklch(0.88_0.012_255))]",
+                "shadow-[0_1px_0_rgba(255,255,255,0.55)_inset,0_1px_2px_rgba(0,0,0,0.03),0_6px_18px_rgba(0,0,0,0.04)]",
+                "backdrop-blur-xl backdrop-saturate-150",
+              ),
         )}
         style={{
-          background: translucent
-            ? shellBackgroundTranslucent
-            : shellBackgroundSolid,
+          background: industrial
+            ? "#f1f5f9"
+            : translucent
+              ? shellBackgroundTranslucent
+              : shellBackgroundSolid,
         }}
       >
         <SwitchPrimitive.Root
           {...rootProps}
           checked={isControlled ? checkedProp : undefined}
           className={cn(
-            /* Flex centers the thumb vertically; avoid absolute + nested flex (subpixel drift). */
             "group/switch relative isolate flex shrink-0 cursor-pointer flex-row items-center justify-start rounded-[9999px] border border-transparent px-[3px] outline-none",
             "transition-[background,box-shadow] duration-200 ease-out",
-            /* Hit slop only — must not paint (no blur/double rim). */
             "after:-inset-x-3 after:pointer-events-auto after:absolute after:z-0 after:rounded-[9999px] after:bg-transparent after:content-['']",
             hitAfterY,
             "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
-            "data-unchecked:bg-[color-mix(in_oklch,var(--muted)_36%,oklch(0.945_0.012_255))]",
-            /* Solid oklch ramp: same mix bases as unchecked/shell, stronger chroma (magenta → purple → cyan) — no alpha, no track blur */
-            "data-checked:bg-[linear-gradient(180deg,color-mix(in_oklch,var(--muted)_32%,oklch(0.9_0.012_255))_0%,color-mix(in_oklch,var(--muted)_30%,oklch(0.87_0.012_255))_38%,color-mix(in_oklch,var(--muted)_30%,oklch(0.87_0.012_255))_72%,color-mix(in_oklch,var(--muted)_32%,oklch(0.85_0.012_255))_100%)]",
-            "dark:data-checked:bg-[linear-gradient(180deg,color-mix(in_oklch,var(--input)_80%,oklch(0.52_0.012_255))_0%,color-mix(in_oklch,var(--input)_78%,oklch(0.5_0.012_255))_36%,color-mix(in_oklch,var(--input)_78%,oklch(0.5_0.012_255))_70%,color-mix(in_oklch,var(--input)_80%,oklch(0.48_0.012_255))_100%)]",
+            industrial
+              ? "data-unchecked:bg-slate-200 data-checked:bg-[#003876]"
+              : cn(
+                  "data-unchecked:bg-[color-mix(in_oklch,var(--muted)_36%,oklch(0.945_0.012_255))]",
+                  "data-checked:bg-[linear-gradient(180deg,color-mix(in_oklch,var(--muted)_32%,oklch(0.9_0.012_255))_0%,color-mix(in_oklch,var(--muted)_30%,oklch(0.87_0.012_255))_38%,color-mix(in_oklch,var(--muted)_30%,oklch(0.87_0.012_255))_72%,color-mix(in_oklch,var(--muted)_32%,oklch(0.85_0.012_255))_100%)]",
+                ),
             "data-disabled:cursor-not-allowed data-disabled:opacity-50",
-            "dark:data-unchecked:bg-[color-mix(in_oklch,var(--input)_86%,oklch(0.38_0.012_255))]",
             trackSize
           )}
           data-size={size}

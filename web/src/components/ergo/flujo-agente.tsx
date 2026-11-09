@@ -22,7 +22,7 @@ const Nodo = forwardRef<HTMLDivElement, { activo: boolean; hecho: boolean; child
 ))
 Nodo.displayName = "Nodo"
 
-/** Recorrido del agente mientras analiza: la única animación orquestada de la app. */
+/** Recorrido del agente mientras analiza. En reposo: una sola línea (los tabs ya marcan el progreso humano). */
 export function FlujoAgente({ trabajando }: { trabajando: boolean }) {
   const contenedor = useRef<HTMLDivElement>(null)
   const nodos = useMemo(() => PASOS.map(() => createRef<HTMLDivElement>()), [])
@@ -31,7 +31,6 @@ export function FlujoAgente({ trabajando }: { trabajando: boolean }) {
   useEffect(() => {
     if (!trabajando) return
     setPaso(0)
-    // El backend procesa todo en una llamada; avanzamos al ritmo típico de cada etapa y nos detenemos antes del especialista.
     const tiempos = [500, 1600, 900, 600, 700]
     let total = 0
     const relojes = tiempos.map((ms, i) => {
@@ -43,13 +42,21 @@ export function FlujoAgente({ trabajando }: { trabajando: boolean }) {
 
   const pasoVisible = Math.min(paso, PASOS.length - 2)
 
+  if (!trabajando) {
+    return (
+      <p className="rounded-lg border border-rule-soft bg-slate-50 px-3 py-2 text-[13px] text-graphite" aria-label="Pipeline del agente">
+        {PASOS.map((p) => p.titulo).join(" → ")}
+      </p>
+    )
+  }
+
   return (
     <div ref={contenedor} className="relative overflow-hidden rounded-[14px] border border-rule bg-sheet px-6 py-8">
-      {trabajando && <BorderBeam size={120} duration={5} colorFrom="#13233b" colorTo="#8a99ad" borderWidth={1.5} />}
+      <BorderBeam size={120} duration={5} colorFrom="#13233b" colorTo="#8a99ad" borderWidth={1.5} />
       <div className="relative grid grid-cols-6 gap-2">
         {PASOS.map(({ icono: Icono, titulo, detalle }, i) => (
           <div key={titulo} className="flex flex-col items-center text-center">
-            <Nodo ref={nodos[i]} activo={trabajando && i === pasoVisible} hecho={trabajando && i < pasoVisible}>
+            <Nodo ref={nodos[i]} activo={i === pasoVisible} hecho={i < pasoVisible}>
               <Icono className="size-5" strokeWidth={1.75} />
             </Nodo>
             <p className="mt-3 text-[14px] font-semibold">{titulo}</p>
@@ -60,7 +67,7 @@ export function FlujoAgente({ trabajando }: { trabajando: boolean }) {
       {PASOS.slice(0, -1).map((_, i) => (
         <AnimatedBeam key={i} containerRef={contenedor} fromRef={nodos[i]} toRef={nodos[i + 1]}
           pathColor="var(--rule)" pathOpacity={1} pathWidth={2} gradientStartColor="#13233b" gradientStopColor="#5b6776"
-          duration={trabajando ? 1.6 : 4} delay={i * 0.25} curvature={i % 2 ? 18 : -18} />
+          duration={1.6} delay={i * 0.25} curvature={i % 2 ? 18 : -18} />
       ))}
     </div>
   )
