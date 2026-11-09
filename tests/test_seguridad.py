@@ -196,3 +196,10 @@ def test_bitacora_de_otra_instalacion_no_se_marca_como_alterada(tmp_path: Path) 
     assert val.estado_bitacora(validacion) == "sin_firma"
     val.usar_clave(tmp_path / "equipo-a")
     assert val.estado_bitacora(validacion) == "firmada"
+
+
+def test_el_tiempo_del_agente_incluye_la_deteccion_al_difuminar(cliente: TestClient) -> None:
+    datos = _crear(cliente, "tiempos").json()
+    tiempos = datos["resultado"]["tiempos_s"]
+    assert "deteccion_y_difuminado" in tiempos
+    assert tiempos["analisis_total"] >= tiempos["deteccion_y_difuminado"]

@@ -236,8 +236,13 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
     return mediciones
 
 
-def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None) -> Path:
-    """Ejecuta pose, ángulos, REBA, recomendaciones, riesgo residual e informe borrador."""
+def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None,
+                     segundos_previos: float = 0.0) -> Path:
+    """Ejecuta pose, ángulos, REBA, recomendaciones, riesgo residual e informe borrador.
+
+    ``segundos_previos`` suma el trabajo del agente hecho antes de llamar aquí (la detección de pose
+    al difuminar las fotos subidas), para que ``analisis_total`` siga midiendo todo el análisis.
+    """
 
     val.usar_clave(raiz)
     inicio = time.perf_counter()
@@ -272,7 +277,9 @@ def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None,
         recomendacion.delta_reba = delta_individual(mediciones, contexto, recomendacion.a_diccionario(), configuracion.reba)
     salida["recomendaciones"] = [recomendacion.a_diccionario() for recomendacion in ordenar(recomendaciones)]
     salida["riesgo_residual"] = calcular_residual(mediciones, contexto, salida["recomendaciones"], configuracion.reba)
-    salida["tiempos_s"] = {"analisis_total": round(time.perf_counter() - inicio, 2)}
+    salida["tiempos_s"] = {"analisis_total": round(time.perf_counter() - inicio + segundos_previos, 2)}
+    if segundos_previos:
+        salida["tiempos_s"]["deteccion_y_difuminado"] = round(segundos_previos, 2)
     ruta_salida = ruta_angulos.parent / "resultado.json"
     ruta_salida.write_text(json.dumps(salida, ensure_ascii=False, indent=2), encoding="utf-8")
     val.sincronizar(ruta_salida.parent, salida)

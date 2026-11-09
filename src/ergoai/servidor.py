@@ -17,6 +17,7 @@ import re
 import shutil
 import socket
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -248,6 +249,7 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         with candado:
             # Cada foto subida se valida y se difumina antes de modificar el caso: si algo falla, el caso queda intacto.
             protegidas: dict[str, privacidad.ImagenProtegida] = {}
+            inicio_difuminado = time.perf_counter()
             for vista, archivo in fotos.items():
                 contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
                 detector = detector_pose()
@@ -258,6 +260,7 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                     raise HTTPException(400, str(exc)) from exc
                 except RuntimeError as exc:  # sin detector no se puede difuminar: no se guarda nada
                     raise HTTPException(503, f"No se guardó la foto {vista} porque no se pudo difuminar el rostro. {exc}") from exc
+            segundos_difuminado = time.perf_counter() - inicio_difuminado if protegidas else 0.0
             destino.mkdir(parents=True, exist_ok=True)
             anterior = destino / "contexto.json"
             if anterior.is_file() and "overrides" not in datos:
@@ -288,7 +291,7 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                 (destino / f"{vista}.pose.json").write_text(json.dumps(protegida.cache(), ensure_ascii=False), encoding="utf-8")
             anterior.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
             try:
-                ejecutar_evaluar(destino, raiz, backend)
+                ejecutar_evaluar(destino, raiz, backend, segundos_previos=segundos_difuminado)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             except RuntimeError as exc:  # el detector aislado se cerró: el servidor sigue disponible
