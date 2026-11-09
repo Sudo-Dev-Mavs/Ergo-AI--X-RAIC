@@ -2,7 +2,7 @@
 
 Asistente local para evaluar la postura de operadores en estaciones de ensamble a partir de fotografías o cámaras (Track 4, Jabil). ErgoAI detecta la pose con **MediaPipe**, mide los ángulos corporales, calcula el **REBA**, propone controles basados en la **NOM-036-1-STPS-2018** y en los lineamientos de Jabil, estima el **riesgo residual** y deja que el especialista **valide, edite o apruebe** cada recomendación antes de emitir el informe.
 
-> Las fotografías de Jabil son confidenciales. Todo se procesa y guarda en el equipo: el servidor solo escucha en `127.0.0.1`, las tomas de cámara se guardan con el rostro difuminado y `data/`, `out/`, `capturas/` y `models/` no se versionan.
+> Las fotografías de Jabil son confidenciales. Todo se procesa y guarda en el equipo: el servidor solo escucha en `127.0.0.1` y solo atiende a la propia interfaz, las fotos (de cámara o subidas) se guardan con el rostro difuminado y `data/`, `out/`, `capturas/`, `models/` y la clave de la bitácora no se versionan.
 
 ## Contenido
 
@@ -48,7 +48,7 @@ flowchart LR
 3. **REBA**: bandas por segmento, tablas A/B/C, carga, agarre y actividad, por cada lado del cuerpo. Si falta un dato, queda como pendiente; nunca se rellena con un valor «típico».
 4. **Recomendaciones**: un motor de reglas propone controles ordenados por jerarquía (ingeniería → rediseño de estación → administrativas), cada uno con su fundamento y los puntos de REBA que reduce.
 5. **Riesgo residual**: el REBA se recalcula aplicando el efecto esperado de los controles no rechazados y se compara con el inicial.
-6. **Validación**: el agente propone y el especialista decide. Cada aprobación, edición, rechazo o corrección de ángulo queda firmada en una bitácora encadenada por hash. El informe está en BORRADOR hasta que el especialista lo aprueba.
+6. **Validación**: el agente propone y el especialista decide. Cada aprobación, edición, rechazo o corrección de ángulo queda en una bitácora encadenada por SHA-256 y firmada con HMAC con la clave de la instalación. El informe está en BORRADOR hasta que el especialista lo aprueba.
 7. **Informe**: HTML autocontenido (imprimible a PDF) con postura, REBA, recomendaciones, riesgo residual, bitácora y tiempos, más un CSV con las columnas de «OBSERVACIONES Y MEJORAS» del formato 16-PE80-6500-00014.
 
 ## Instalación
@@ -189,7 +189,8 @@ Con el ejecutable, la carpeta de datos es `~/ErgoAI` (`C:\Users\<usuario>\ErgoAI
 |---|---|
 | `data/casos/<caso>/` | Entrada: fotos por vista, `contexto.json` y `<vista>.pose.json` si la foto vino de una toma de cámara. |
 | `out/<caso>/resultado.json` | Ángulos, REBA, recomendaciones, riesgo residual y tiempos. |
-| `out/<caso>/validacion.json` | Estado de cada recomendación y bitácora encadenada. |
+| `out/<caso>/validacion.json` | Estado de cada recomendación y bitácora encadenada y firmada. |
+| `.clave_bitacora` | Clave HMAC de esta instalación para firmar la bitácora (permisos 600; no se versiona ni se comparte). |
 | `out/<caso>/informe.html` | Informe del estudio (BORRADOR o APROBADO). |
 | `out/<caso>/acciones_00014.csv` | Acciones con las columnas de «OBSERVACIONES Y MEJORAS». |
 | `out/<caso>/*_pose.png`, `*_angulos.png` | Esqueleto y ángulos anotados por vista. |
@@ -204,13 +205,30 @@ Para borrar un caso, elimina `data/casos/<caso>/` y `out/<caso>/`.
 ## Privacidad y manejo de datos
 
 - **Local**: la API solo escucha en `127.0.0.1` y la interfaz no usa servicios externos; las fuentes tipográficas van empaquetadas.
-- **Rostros en las tomas de cámara**: antes de guardar una toma, ErgoAI detecta la pose sobre la imagen original, ubica la cabeza (nariz, ojos, orejas y boca, con margen) y la difumina con mosaico y desenfoque. Si no hay pose, usa el detector de rostros BlazeFace.
-  - En disco solo queda la imagen difuminada.
+- **Rostros**: antes de guardar una toma de cámara **o una foto subida en la interfaz**, ErgoAI detecta la pose sobre la imagen original, ubica la cabeza (nariz, ojos, orejas y boca, con margen) y la difumina con mosaico y desenfoque. Si no hay pose, usa el detector de rostros BlazeFace.
+  - En disco solo queda la imagen difuminada (JPEG).
   - La pose medida antes de difuminar se guarda en `<vista>.pose.json`, ligada a la imagen por SHA-256, y el análisis la reutiliza para no perder precisión en el cuello.
-  - Si el detector no está disponible, la toma **no se guarda**.
+  - Si el detector no está disponible, la foto o la toma **no se guarda**.
   - La vista previa en vivo no se almacena, pero muestra la cara sin difuminar en pantalla.
-- **Fotos subidas como archivo**: no se modifican; deben venir ya sin rostros, como las de Jabil.
-- **Trazabilidad**: cada cambio queda en `validacion.json` con usuario, fecha, valor anterior y nuevo, comentario y hash encadenado. Si alguien edita o borra una entrada fuera de ErgoAI, la verificación falla y la interfaz lo indica.
+  - Las personas lejanas al fondo pueden quedar sin difuminar si ninguno de los dos detectores las encuentra.
+  - Las fotos que se copian directamente a `data/casos/` para la línea de comandos no pasan por este paso.
+- **Trazabilidad**: cada cambio queda en `validacion.json` con usuario, fecha, valor anterior y nuevo, comentario, hash encadenado y firma HMAC-SHA256. La firma usa una clave aleatoria por instalación (`.clave_bitacora`, permisos 600, en la carpeta de datos y fuera de los casos). La interfaz y el informe distinguen tres estados:
+  - **íntegra y firmada**: la cadena y las firmas coinciden;
+  - **sin firma**: la cadena coincide, pero hay registros anteriores a la firma o de otro equipo, que no se pueden comprobar aquí;
+  - **alterada**: alguien editó, borró o recalculó la cadena sin la clave.
+
+  La clave no protege contra alguien con acceso completo a la cuenta del usuario, que también puede leerla.
+
+### Seguridad del servidor local
+
+Que el servidor escuche solo en `127.0.0.1` no basta: cualquier página abierta en el navegador puede enviarle peticiones. Por eso:
+
+- solo acepta el `Host` `127.0.0.1`, `localhost` o `[::1]`, lo que impide que una web externa lo lea mediante DNS rebinding;
+- rechaza con 403 las peticiones que cambian datos (`POST`, `DELETE`) si vienen de otro origen (CSRF); la CLI y las pruebas, que no envían `Origin`, siguen funcionando;
+- envía `Content-Security-Policy`, `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin` y `Referrer-Policy: no-referrer`, para que otros sitios no puedan incrustar la app, sus fotos ni sus informes;
+- valida cada imagen (formato JPG/PNG, peso y un máximo de **50 megapíxeles**) antes de decodificarla y antes de modificar el caso, así que una imagen pequeña que declara cientos de megapíxeles se rechaza con 400 en lugar de agotar la memoria.
+
+`tests/test_seguridad.py` cubre cada una de estas defensas.
 - **Datos de Jabil**: se usan solo para el reto y no se comparten fuera del equipo.
 
 ## Métodos
@@ -298,8 +316,8 @@ Cualquier cambio posterior regresa el informe a BORRADOR y queda en la bitácora
 | `anotacion.py` | Imágenes anotadas con flechas, valores junto a cada articulación y color por banda REBA. |
 | `reba.py`, `config.py` | Bandas y tablas REBA; configuración validada con Pydantic. |
 | `recomendaciones.py`, `residual.py` | Motor de reglas y recálculo del riesgo residual. |
-| `validacion.py`, `informe.py` | Decisiones del especialista, bitácora encadenada, informe HTML y CSV. |
-| `capturas.py`, `privacidad.py` | Tomas temporales de cámara y difuminado de rostros. |
+| `validacion.py`, `informe.py` | Decisiones del especialista, bitácora encadenada y firmada, informe HTML y CSV. |
+| `capturas.py`, `privacidad.py`, `io_imagenes.py` | Tomas temporales de cámara, difuminado de rostros y validación de imágenes. |
 | `cli.py` | Pipeline completo y comandos `pose`, `angulos`, `evaluar`, `validar` e `informe`. |
 | `servidor.py` | API FastAPI local y servidor de la interfaz compilada. |
 | `escritorio.py` | Lanzador del ejecutable: carpeta de datos, servidor y ventana de aplicación. |
@@ -340,13 +358,14 @@ La interfaz (`web/`) usa React 19, TypeScript, Tailwind CSS 4 y `motion`, con co
 uv run pytest
 ```
 
-Son 57 pruebas deterministas, sin fotografías confidenciales; usan detectores sintéticos. **No sustituyen** la medición de precisión con fotos reales ([protocolo](docs/PROTOCOLO_VALIDACION.md)). Cubren:
+Son 88 pruebas deterministas, sin fotografías confidenciales; usan detectores sintéticos. **No sustituyen** la medición de precisión con fotos reales ([protocolo](docs/PROTOCOLO_VALIDACION.md)). Cubren:
 
 - geometría, ángulos y bandas REBA;
 - el respaldo 3D, verificado con poses 3D construidas con ángulos conocidos, el respaldo de frente y las imágenes anotadas;
 - el reporte de precisión (criterios 1 y 2 y medidas sin estimar);
 - el pipeline completo, las recomendaciones y el riesgo residual;
-- la bitácora (incluida la detección de alteraciones) y las condiciones para aprobar;
+- la bitácora (incluida la detección de alteraciones y de cadenas recalculadas sin la clave) y las condiciones para aprobar;
+- las defensas del servidor: Host local, origen, cabeceras, imágenes hostiles y difuminado de fotos subidas;
 - la API (rutas, validaciones y *path traversal*);
 - las capturas (tope, purga, análisis desde una toma);
 - el difuminado (no se vuelve a detectar sobre la imagen difuminada y no se guarda nada si el detector falla);

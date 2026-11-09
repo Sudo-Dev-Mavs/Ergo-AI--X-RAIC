@@ -1,14 +1,23 @@
-"""Validación humana de recomendaciones con bitácora inalterable (cadena de hashes).
+"""Validación humana de recomendaciones con bitácora a prueba de alteraciones.
 
 Regla del reto: el agente propone y el especialista decide. Ninguna recomendación se
 convierte en acción de piso sin pasar por ``aprobar``; cada cambio queda registrado
 con usuario, fecha, valor anterior y valor nuevo.
+
+Cada entrada se encadena con SHA-256 a la anterior y, además, se firma con HMAC-SHA256 usando
+una clave aleatoria de esta instalación (``.clave_bitacora``, fuera de las carpetas de casos).
+La cadena sola detecta ediciones a mano, pero quien la recalcula la deja «íntegra»; sin la
+clave, esa falsificación deja firmas inválidas y se detecta. La clave no protege contra
+alguien con acceso completo a la cuenta del usuario, que también puede leerla.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,15 +28,40 @@ ARCHIVO = "validacion.json"
 CAMPOS_EDITABLES = ("problema", "solucion", "jerarquia", "responsable", "fecha_compromiso", "comentario")
 CAMPOS_AGENTE = ("factor", "problema", "efecto", "prioridad", "delta_reba", "referencias")
 AGENTE = "ErgoAI (agente)"
+ARCHIVO_CLAVE = ".clave_bitacora"
+_clave: bytes | None = None
 
 
 def _ahora() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def usar_clave(raiz: Path) -> None:
+    """Carga (o crea la primera vez) la clave de firma de esta instalación en ``raiz/.clave_bitacora``."""
+
+    global _clave
+    ruta = Path(raiz) / ARCHIVO_CLAVE
+    if not ruta.is_file():
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="ascii") as archivo:
+            archivo.write(secrets.token_hex(32))
+    _clave = bytes.fromhex(ruta.read_text(encoding="ascii").strip())
+
+
 def _hash(entrada: dict[str, Any], previo: str) -> str:
-    contenido = json.dumps({k: v for k, v in entrada.items() if k != "hash"}, ensure_ascii=False, sort_keys=True)
+    contenido = json.dumps({k: v for k, v in entrada.items() if k not in ("hash", "firma")}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256((previo + contenido).encode("utf-8")).hexdigest()
+
+
+def _firma(hash_entrada: str) -> str | None:
+    return hmac.new(_clave, hash_entrada.encode("ascii"), hashlib.sha256).hexdigest() if _clave else None
+
+
+def _id_clave() -> str | None:
+    """Huella pública de la clave: distingue «firmada en otra instalación» de «falsificada aquí»."""
+
+    return hashlib.sha256(_clave).hexdigest()[:12] if _clave else None
 
 
 def registrar(validacion: dict[str, Any], usuario: str, accion: str, rec_id: str | None = None,
@@ -40,20 +74,37 @@ def registrar(validacion: dict[str, Any], usuario: str, accion: str, rec_id: str
     previo = bitacora[-1]["hash"] if bitacora else "0" * 64
     entrada = {"n": len(bitacora) + 1, "fecha": _ahora(), "usuario": usuario.strip(), "accion": accion,
                "rec_id": rec_id, "cambios": cambios or {}, "comentario": comentario, "hash_previo": previo}
+    if _clave:
+        entrada["clave"] = _id_clave()
     entrada["hash"] = _hash(entrada, previo)
+    firma = _firma(entrada["hash"])
+    if firma:
+        entrada["firma"] = firma
     bitacora.append(entrada)
     return entrada
 
 
-def verificar_bitacora(validacion: dict[str, Any]) -> bool:
-    """True si ninguna entrada fue alterada, borrada o reordenada."""
+def estado_bitacora(validacion: dict[str, Any]) -> str:
+    """«firmada», «sin_firma» (cadena íntegra pero sin firma verificable) o «alterada»."""
 
     previo = "0" * 64
+    sin_firma = False
     for numero, entrada in enumerate(validacion.get("bitacora", []), start=1):
         if entrada.get("n") != numero or entrada.get("hash_previo") != previo or entrada.get("hash") != _hash(entrada, previo):
-            return False
+            return "alterada"
+        firma = entrada.get("firma")
+        if firma is None or _clave is None or entrada.get("clave") != _id_clave():
+            sin_firma = True  # entrada anterior a la firma o firmada en otra instalación: no se puede comprobar aquí
+        elif not hmac.compare_digest(firma, _firma(entrada["hash"]) or ""):
+            return "alterada"  # cadena recalculada sin la clave
         previo = entrada["hash"]
-    return True
+    return "sin_firma" if sin_firma else "firmada"
+
+
+def verificar_bitacora(validacion: dict[str, Any]) -> bool:
+    """True si ninguna entrada fue alterada, borrada, reordenada ni re-firmada sin la clave."""
+
+    return estado_bitacora(validacion) != "alterada"
 
 
 def _a_borrador(validacion: dict[str, Any], usuario: str, motivo: str) -> None:

@@ -122,6 +122,8 @@ export interface EstadoCaso {
   }
   bloqueos: string[]
   bitacora_integra: boolean
+  /** firmada: cadena y HMAC verificados · sin_firma: cadena íntegra sin firma comprobable · alterada */
+  bitacora_estado: "firmada" | "sin_firma" | "alterada"
   imagenes: Vista[]
   fotos: Vista[]
 }
@@ -172,6 +174,7 @@ export function normalizarEstadoCaso(bruto: EstadoCaso): EstadoCaso {
     },
     bloqueos: bruto.bloqueos ?? [],
     bitacora_integra: bruto.bitacora_integra ?? true,
+    bitacora_estado: bruto.bitacora_estado ?? (bruto.bitacora_integra === false ? "alterada" : "sin_firma"),
     imagenes: bruto.imagenes ?? [],
     fotos: bruto.fotos ?? [],
   }

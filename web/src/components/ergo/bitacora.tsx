@@ -10,6 +10,7 @@ const valorTexto = (valor: unknown) => (valor == null || valor === "" ? "vacío"
 export function PanelBitacora({ estado }: { estado: EstadoCaso }) {
   const entradas = estado.validacion.bitacora
   const integra = estado.bitacora_integra
+  const firmada = estado.bitacora_estado === "firmada"
   return (
     <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_300px]">
       <AnimatedList delay={70} className="items-stretch gap-2">
@@ -41,15 +42,17 @@ export function PanelBitacora({ estado }: { estado: EstadoCaso }) {
         })}
       </AnimatedList>
       <aside className="xl:sticky xl:top-8 xl:self-start">
-        <div className={cn("rounded-[12px] p-4", integra ? "trazo-tinta" : "border-2 border-[var(--riesgo-muy-alto)] bg-sheet")}>
+        <div className={cn("rounded-[12px] p-4", !integra ? "border-2 border-[var(--riesgo-muy-alto)] bg-sheet" : firmada ? "trazo-tinta" : "border-2 border-amber-400 bg-sheet")}>
           <div className="flex items-center gap-2">
             {integra ? <ShieldCheck className="size-5" strokeWidth={1.75} /> : <ShieldAlert className="size-5 text-[var(--riesgo-muy-alto)]" strokeWidth={1.75} />}
-            <h3 className="t-title text-[17px]">{integra ? "Bitácora íntegra" : "Bitácora alterada"}</h3>
+            <h3 className="t-title text-[17px]">{!integra ? "Bitácora alterada" : firmada ? "Bitácora íntegra y firmada" : "Bitácora íntegra, sin firma"}</h3>
           </div>
           <p className="mt-2 text-[14px] text-ink-soft">
-            {integra
-              ? `Los ${entradas.length} registros están encadenados con SHA-256: si alguien edita o borra uno fuera de ErgoAI, la cadena deja de coincidir.`
-              : "Algún registro se modificó fuera de ErgoAI. No apruebes el informe hasta aclarar el cambio."}
+            {!integra
+              ? "Algún registro se modificó fuera de ErgoAI. No apruebes el informe hasta aclarar el cambio."
+              : firmada
+                ? `Los ${entradas.length} registros están encadenados con SHA-256 y firmados con la clave de esta instalación: editarlos o recalcular la cadena fuera de ErgoAI se detecta.`
+                : "La cadena SHA-256 coincide, pero hay registros sin firma comprobable aquí (anteriores a la firma o de otro equipo): una edición que recalcule la cadena no se detectaría."}
           </p>
           {entradas.length > 0 && <p className="mt-3 break-all text-[12px] text-graphite">Último sello {entradas[entradas.length - 1].hash.slice(0, 16)}</p>}
         </div>

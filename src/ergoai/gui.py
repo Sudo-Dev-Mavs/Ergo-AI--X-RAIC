@@ -19,7 +19,7 @@ from .cli import ejecutar_evaluar, ejecutar_validacion
 from .config import cargar_configuracion
 from .informe import COLOR_RIESGO, ETIQUETA_ESTADO, cargar_estado
 from .recomendaciones import ETIQUETA_JERARQUIA, JERARQUIAS, TIPOS_TAREA, TIPOS_TRABAJO
-from .validacion import bloqueos_aprobacion, verificar_bitacora
+from .validacion import bloqueos_aprobacion, usar_clave, verificar_bitacora
 
 # Sustitutos para fuentes bitmap (Tk sin Xft, p. ej. Python de uv en Linux) que no tienen estos glifos.
 _ASCII = str.maketrans({"−": "-", "→": "->", "Δ": "d", "–": "-", "—": "-", "≥": ">=", "≤": "<=", "⚠": "!"})
@@ -33,6 +33,7 @@ class AplicacionErgoAI:
 
     def __init__(self, raiz: Path, caso_inicial: Path | None = None) -> None:
         self.raiz = raiz
+        usar_clave(raiz)
         self.config = cargar_configuracion(raiz / "config" / "umbrales.yaml")
         self.ventana = Tk()
         self.ventana.title("ErgoAI · Evaluación ergonómica")

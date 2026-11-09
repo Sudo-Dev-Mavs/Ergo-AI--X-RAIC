@@ -8,3 +8,6 @@ models/
 /dist/
 /build/
 capturas/
+
+# Clave de firma de la bitácora (una por instalación; nunca se versiona)
+.clave_bitacora

@@ -64,7 +64,7 @@ def entorno(tmp_path: Path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "umbrales.yaml").write_text((Path(__file__).resolve().parents[1] / "config" / "umbrales.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     detector = _Contador()
-    return TestClient(crear_app(tmp_path, detector)), detector, tmp_path
+    return TestClient(crear_app(tmp_path, detector), base_url="http://127.0.0.1:8765"), detector, tmp_path
 
 
 def test_la_toma_se_guarda_difuminada_con_la_pose_del_original(entorno) -> None:
@@ -92,14 +92,16 @@ def test_el_analisis_usa_la_pose_previa_al_difuminado(entorno) -> None:
     datos = cliente.post("/api/casos", data={"contexto": json.dumps(contexto), "borrador": "b2", "toma": toma}).json()
     assert detector.llamadas == antes, "no debe volver a detectar sobre la imagen difuminada"
     pose = json.loads((raiz / "out" / "privado" / "pose.json").read_text(encoding="utf-8"))
-    assert pose["vistas"]["costado"]["fuente_pose"] == "captura antes de difuminar el rostro"
+    assert pose["vistas"]["costado"]["fuente_pose"] == "pose detectada antes de difuminar el rostro"
     assert datos["resultado"]["reba"]["final"]["reportado"] is not None
 
-    # Una foto subida para esa vista invalida la pose guardada.
+    # Una foto subida para esa vista reemplaza la pose guardada por la de la foto nueva, también difuminada.
     cliente.post("/api/casos", data={"contexto": json.dumps(contexto), "reemplazar": "true"},
                  files={"costado": ("c.jpg", _jpg(_ruido(semilla=9)), "image/jpeg")})
-    assert not (raiz / "data" / "casos" / "privado" / "costado.pose.json").exists()
-    assert detector.llamadas == antes + 1
+    carpeta = raiz / "data" / "casos" / "privado"
+    cache = json.loads((carpeta / "costado.pose.json").read_text(encoding="utf-8"))
+    assert cache["sha256"] == hashlib.sha256((carpeta / "costado.jpg").read_bytes()).hexdigest()
+    assert detector.llamadas == antes + 1, "se detecta una vez, antes de difuminar, y el análisis reutiliza esa pose"
 
 
 def test_si_no_se_puede_difuminar_no_se_guarda_nada(tmp_path: Path) -> None:
@@ -110,7 +112,7 @@ def test_si_no_se_puede_difuminar_no_se_guarda_nada(tmp_path: Path) -> None:
         def detect(self, image):
             raise RuntimeError("detector caído")
 
-    cliente = TestClient(crear_app(tmp_path, _Roto()))
+    cliente = TestClient(crear_app(tmp_path, _Roto()), base_url="http://127.0.0.1:8765")
     respuesta = cliente.post("/api/capturas/b3", files={"costado": ("c.jpg", _jpg(_ruido()), "image/jpeg")})
     assert respuesta.status_code == 503 and "difuminar" in respuesta.json()["detail"]
     assert not (tmp_path / "capturas" / "b3").exists()

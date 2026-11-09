@@ -21,7 +21,7 @@ class _Backend:
 def cliente(tmp_path: Path) -> TestClient:
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "umbrales.yaml").write_text((Path(__file__).resolve().parents[1] / "config" / "umbrales.yaml").read_text(encoding="utf-8"), encoding="utf-8")
-    return TestClient(crear_app(tmp_path, _Backend()))
+    return TestClient(crear_app(tmp_path, _Backend()), base_url="http://127.0.0.1:8765")
 
 
 def _png() -> bytes:

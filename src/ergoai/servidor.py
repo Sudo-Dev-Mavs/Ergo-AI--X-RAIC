@@ -2,6 +2,11 @@
 
 Las fotografías y resultados nunca salen del equipo: el servidor escucha únicamente en
 la interfaz de loopback y sirve la interfaz compilada desde ``src/ergoai/web/dist``.
+
+Escuchar en loopback no basta: cualquier página abierta en el navegador puede enviar peticiones a
+127.0.0.1. Por eso el servidor solo acepta el Host local (contra DNS rebinding), rechaza las
+peticiones que cambian datos si vienen de otro origen (contra CSRF) y envía cabeceras que impiden
+incrustar la app o sus imágenes en otros sitios.
 """
 
 from __future__ import annotations
@@ -16,8 +21,10 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from urllib.parse import urlsplit
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -27,6 +34,7 @@ from . import validacion as val
 from .cli import EXTENSIONES_IMAGEN, VISTAS, ejecutar_evaluar, ejecutar_validacion
 from .config import cargar_configuracion
 from .informe import cargar_estado, generar_informe
+from .io_imagenes import validar_foto
 from .pose import PoseBackend
 from .pose_aislada import DetectorAislado
 
@@ -34,6 +42,44 @@ PATRON_CASO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ARCHIVOS_SALIDA = re.compile(r"^((frente|costado|aerea)_(angulos|pose)\.png|informe\.html|acciones_00014\.csv)$")
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
 MAX_FOTO_BYTES = 25 * 1024 * 1024
+HOSTS_LOCALES = frozenset({"127.0.0.1", "localhost", "[::1]"})
+METODOS_SEGUROS = frozenset({"GET", "HEAD", "OPTIONS"})
+CABECERAS_SEGURIDAD = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",  # el informe se previsualiza en un iframe del mismo origen
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",  # otras páginas no pueden incrustar fotos ni informes
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Permissions-Policy": "camera=(self), microphone=(), geolocation=(), usb=(), payment=()",
+}
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "media-src 'self' blob: mediastream:; font-src 'self' data:; connect-src 'self'; object-src 'none'; "
+       "base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+CSP_DOCS = "frame-ancestors 'self'; object-src 'none'; base-uri 'self'"  # Swagger UI carga recursos de su CDN
+
+
+def _host_sin_puerto(host: str) -> str:
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host[: host.find("]") + 1] if "]" in host else host
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def _rechazo_origen(request: Request, host: str) -> str | None:
+    """Motivo para rechazar una petición que cambia datos desde otro origen; None si es del mismo."""
+
+    if request.method in METODOS_SEGUROS:
+        return None
+    origen = request.headers.get("origin")
+    if origen is not None:
+        partes = urlsplit(origen)
+        if origen == "null" or partes.scheme not in ("http", "https") or partes.netloc.lower() != host.lower():
+            return f"Origen no permitido: {origen}"
+        return None
+    sitio = request.headers.get("sec-fetch-site")
+    if sitio is not None and sitio not in ("same-origin", "none"):
+        return f"Petición entre sitios rechazada ({sitio})"
+    return None  # sin Origin ni Sec-Fetch-Site: clientes locales como la CLI o las pruebas
 
 
 class SolicitudValidacion(BaseModel):
@@ -62,6 +108,21 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
     candado = threading.Lock()  # MediaPipe y la escritura de archivos no deben correr en paralelo
     candado_capturas = threading.Lock()
     capturas.purgar_vencidas(raiz)
+    val.usar_clave(raiz)  # firma HMAC de la bitácora con la clave de esta instalación
+
+    @app.middleware("http")
+    async def proteger_origen(request: Request, call_next):
+        host = request.headers.get("host", "")
+        if _host_sin_puerto(host) not in HOSTS_LOCALES:
+            return JSONResponse({"detail": "Host no permitido: ErgoAI solo atiende a 127.0.0.1 o localhost."}, status_code=400)
+        motivo = _rechazo_origen(request, host)
+        if motivo:
+            return JSONResponse({"detail": motivo}, status_code=403)
+        respuesta = await call_next(request)
+        for nombre, valor in CABECERAS_SEGURIDAD.items():
+            respuesta.headers.setdefault(nombre, valor)
+        respuesta.headers.setdefault("Content-Security-Policy", CSP_DOCS if request.url.path.startswith("/api/docs") else CSP)
+        return respuesta
 
     def config_reba():
         return cargar_configuracion(raiz / "config" / "umbrales.yaml").reba
@@ -109,6 +170,7 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                 (resultado.get("reba", {}).get("final") or {}).get("reportado"),
             ),
             "bitacora_integra": val.verificar_bitacora(validacion),
+            "bitacora_estado": val.estado_bitacora(validacion),
             "imagenes": [vista for vista in VISTAS if (carpeta / f"{vista}_angulos.png").is_file()],
             "fotos": [vista for vista in VISTAS if any((entrada / f"{vista}{ext}").is_file() for ext in EXTENSIONES_IMAGEN)],
         }
@@ -184,6 +246,18 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         if (raiz / "out" / caso_id / "resultado.json").is_file() and not reemplazar:
             raise HTTPException(409, f"El caso «{caso_id}» ya existe. Usa otro identificador o confirma que quieres reemplazarlo.")
         with candado:
+            # Cada foto subida se valida y se difumina antes de modificar el caso: si algo falla, el caso queda intacto.
+            protegidas: dict[str, privacidad.ImagenProtegida] = {}
+            for vista, archivo in fotos.items():
+                contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
+                detector = detector_pose()
+                try:
+                    validar_foto(contenido, f"La foto {vista}", MAX_FOTO_BYTES)
+                    protegidas[vista] = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+                except RuntimeError as exc:  # sin detector no se puede difuminar: no se guarda nada
+                    raise HTTPException(503, f"No se guardó la foto {vista} porque no se pudo difuminar el rostro. {exc}") from exc
             destino.mkdir(parents=True, exist_ok=True)
             anterior = destino / "contexto.json"
             if anterior.is_file() and "overrides" not in datos:
@@ -207,17 +281,11 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                     shutil.copy2(pose, destino / f"{vista}.pose.json")
                 else:
                     (destino / f"{vista}.pose.json").unlink(missing_ok=True)
-            for vista, archivo in fotos.items():
-                (destino / f"{vista}.pose.json").unlink(missing_ok=True)
-                extension = Path(archivo.filename or "").suffix.lower()
-                if extension not in (".jpg", ".jpeg", ".png"):
-                    raise HTTPException(400, f"La foto {vista} debe ser JPG o PNG.")
-                contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
-                if len(contenido) > MAX_FOTO_BYTES:
-                    raise HTTPException(400, f"La foto {vista} supera 25 MB.")
+            for vista, protegida in protegidas.items():
                 for ext in EXTENSIONES_IMAGEN:
                     (destino / f"{vista}{ext}").unlink(missing_ok=True)
-                (destino / f"{vista}{extension}").write_bytes(contenido)
+                (destino / f"{vista}.jpg").write_bytes(protegida.jpeg)  # solo la versión difuminada llega al disco
+                (destino / f"{vista}.pose.json").write_text(json.dumps(protegida.cache(), ensure_ascii=False), encoding="utf-8")
             anterior.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
             try:
                 ejecutar_evaluar(destino, raiz, backend)

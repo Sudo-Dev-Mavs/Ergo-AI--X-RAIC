@@ -13,7 +13,7 @@ from typing import Any
 from .config import RebaConfig
 from .recomendaciones import ETIQUETA_JERARQUIA, JERARQUIAS
 from .residual import calcular_residual
-from .validacion import bloqueos_aprobacion, cargar, verificar_bitacora
+from .validacion import bloqueos_aprobacion, cargar, estado_bitacora
 
 COLOR_RIESGO = {"Inapreciable": "#3c8d5a", "Bajo": "#5aa469", "Medio": "#d9a400", "Alto": "#e06c00", "Muy alto": "#c62828", None: "#888"}
 ETIQUETA_ESTADO = {"propuesta": "Propuesta (sin validar)", "aprobada": "Aprobada", "rechazada": "Rechazada", "obsoleta": "Obsoleta"}
@@ -152,7 +152,11 @@ def _bitacora(validacion: dict[str, Any]) -> str:
         filas.append(f"<tr><td class='num'>{entrada['n']}</td><td class='chico'>{escape(entrada['fecha'])}</td><td>{escape(entrada['usuario'])}</td>"
                      f"<td>{escape(entrada['accion'])}</td><td>{escape(entrada.get('rec_id') or '')}</td><td class='chico'>{cambios}</td>"
                      f"<td class='chico'>{escape(entrada.get('comentario') or '')}</td></tr>")
-    integridad = "íntegra (cadena SHA-256 verificada)" if verificar_bitacora(validacion) else "⚠ ALTERADA: la cadena de hashes no coincide"
+    integridad = {
+        "firmada": "íntegra (cadena SHA-256 y firma HMAC de esta instalación verificadas)",
+        "sin_firma": "cadena SHA-256 íntegra, pero sin firma verificable en esta instalación (registros anteriores a la firma o de otro equipo)",
+        "alterada": "⚠ ALTERADA: la cadena de hashes o la firma no coinciden",
+    }[estado_bitacora(validacion)]
     return (f"<p class='chico'>Integridad de la bitácora: <b>{integridad}</b></p><table><thead><tr><th>#</th><th>Fecha</th><th>Usuario</th><th>Acción</th>"
             f"<th>Rec.</th><th>Cambios</th><th>Comentario</th></tr></thead><tbody>{''.join(filas)}</tbody></table>")
 

@@ -1,4 +1,4 @@
-"""Difuminado automático de rostros en las tomas de cámara.
+"""Difuminado automático de rostros en las tomas de cámara y en las fotos subidas por la interfaz.
 
 La pose se detecta sobre la imagen original y la cabeza se ubica con los puntos de la cara
 (nariz, ojos, orejas, boca), con un margen proporcional al ancho de hombros. Si no hay pose, se
@@ -16,8 +16,9 @@ from typing import Any, Callable
 
 import cv2
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 
+from .io_imagenes import abrir_rgb
 from .modelos import Landmark, PoseResult, WorldLandmark
 
 Caja = tuple[int, int, int, int]  # x0, y0, x1, y1 en píxeles
@@ -110,10 +111,9 @@ def difuminar(imagen: np.ndarray, cajas: list[Caja]) -> np.ndarray:
 
 
 def decodificar(contenido: bytes) -> np.ndarray:
-    """Igual que ``io_imagenes.cargar_imagen``: corrige EXIF y convierte a RGB."""
+    """Igual que ``io_imagenes.cargar_imagen``: corrige EXIF, convierte a RGB y respeta el tope de megapíxeles."""
 
-    with Image.open(io.BytesIO(contenido)) as original:
-        return np.asarray(ImageOps.exif_transpose(original).convert("RGB"), dtype=np.uint8).copy()
+    return abrir_rgb(io.BytesIO(contenido))
 
 
 def codificar(imagen: np.ndarray) -> bytes:

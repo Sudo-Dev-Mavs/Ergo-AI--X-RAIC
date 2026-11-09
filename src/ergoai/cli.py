@@ -146,7 +146,7 @@ def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None, ca
         vista = procesar_vista(nombre, imagen, _PosesFijas(cacheadas) if cacheadas is not None else detector, configuracion, indice)
         vistas[nombre] = vista.a_diccionario(configuracion.pose.vis_min)
         if cacheadas is not None:
-            vistas[nombre]["fuente_pose"] = "captura antes de difuminar el rostro"
+            vistas[nombre]["fuente_pose"] = "pose detectada antes de difuminar el rostro"
         guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min)
         if not vista.detectado:
             advertencias.append(f"vista {nombre}: {vista.motivo}")
@@ -239,6 +239,7 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
 def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None) -> Path:
     """Ejecuta pose, ángulos, REBA, recomendaciones, riesgo residual e informe borrador."""
 
+    val.usar_clave(raiz)
     inicio = time.perf_counter()
     ruta_angulos = ejecutar_angulos(caso, raiz, backend, carpeta_salida)
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
@@ -295,6 +296,7 @@ def ejecutar_validacion(carpeta: Path, raiz: Path, usuario: str, accion: str, re
                         valores: dict[str, str] | None = None, comentario: str = "") -> Path:
     """Aplica una decisión del especialista, la registra y regenera el informe."""
 
+    val.usar_clave(raiz)
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
     resultado = json.loads((carpeta / "resultado.json").read_text(encoding="utf-8"))
     validacion = val.cargar(carpeta) or val.sincronizar(carpeta, resultado)
@@ -367,6 +369,7 @@ def main() -> None:
         raiz = Path(__file__).resolve().parents[2]
         carpeta = carpeta_resultado(argumentos.caso.resolve(), raiz)
         if argumentos.comando == "informe":
+            val.usar_clave(raiz)
             configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
             print(f"Informe: {generar_informe(carpeta, configuracion.reba)}")
         else:

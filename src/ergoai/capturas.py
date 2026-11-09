@@ -8,7 +8,6 @@ máximo ``MAX_TOMAS`` por borrador y se borran solas después de ``RETENCION_HOR
 
 from __future__ import annotations
 
-import io
 import json
 import re
 import shutil
@@ -17,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, UnidentifiedImageError
+from .io_imagenes import validar_foto
 
 VISTAS = ("frente", "costado", "aerea")
 MAX_TOMAS = 120
@@ -40,16 +39,10 @@ def _id_toma(destino: Path) -> str:
     return candidato
 
 
-def validar_imagen(contenido: bytes, vista: str) -> None:
-    if len(contenido) > MAX_BYTES:
-        raise ValueError(f"La captura {vista} supera 15 MB.")
-    try:
-        with Image.open(io.BytesIO(contenido)) as imagen:
-            if imagen.format not in ("JPEG", "PNG"):
-                raise ValueError(f"La captura {vista} debe ser JPEG o PNG.")
-            imagen.verify()
-    except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError(f"La captura {vista} no es una imagen válida.") from exc
+def validar_imagen(contenido: bytes, vista: str) -> str:
+    """Peso, formato y megapíxeles de una captura; devuelve su extensión."""
+
+    return validar_foto(contenido, f"La captura {vista}", MAX_BYTES)
 
 
 def guardar_toma(raiz: Path, borrador: str, imagenes: dict[str, bytes], poses: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -67,9 +60,7 @@ def guardar_toma(raiz: Path, borrador: str, imagenes: dict[str, bytes], poses: d
     temporal = destino / f".{toma}.tmp"
     temporal.mkdir()
     for vista, contenido in imagenes.items():
-        with Image.open(io.BytesIO(contenido)) as imagen:
-            extension = ".jpg" if imagen.format == "JPEG" else ".png"
-        (temporal / f"{vista}{extension}").write_bytes(contenido)
+        (temporal / f"{vista}{validar_imagen(contenido, vista)}").write_bytes(contenido)
         if poses and vista in poses:
             (temporal / f"{vista}.pose.json").write_text(json.dumps(poses[vista], ensure_ascii=False), encoding="utf-8")
     temporal.rename(destino / toma)
