@@ -105,6 +105,51 @@ def archivo_pose(raiz: Path, borrador: str, toma: str, vista: str) -> Path | Non
     return ruta if ruta.is_file() else None
 
 
+def reordenar_vistas_toma(raiz: Path, borrador: str, toma: str, destino_por_origen: dict[str, str]) -> list[str]:
+    """Renombra archivos de una toma según origen→destino (p. ej. costado→frente).
+
+    Usa nombres temporales para no pisar archivos en ciclos (A→B y B→A).
+    Devuelve mensajes legibles de lo que se movió.
+    """
+
+    if not PATRON_TOMA.match(toma):
+        raise ValueError("Identificador de toma inválido.")
+    base = carpeta(raiz) / borrador / toma
+    if not base.is_dir():
+        raise ValueError("No se encontró la toma.")
+
+    cambios = {o: d for o, d in destino_por_origen.items() if o in VISTAS and d in VISTAS and o != d}
+    if not cambios:
+        return []
+
+    pendientes: list[tuple[Path, str, str]] = []  # ruta_actual, vista_destino, sufijo
+    for origen, destino in cambios.items():
+        ruta = archivo_vista(raiz, borrador, toma, origen)
+        if ruta is None:
+            continue
+        pendientes.append((ruta, destino, ruta.suffix))
+        pose = archivo_pose(raiz, borrador, toma, origen)
+        if pose is not None:
+            pendientes.append((pose, destino, ".pose.json"))
+
+    if not pendientes:
+        return []
+
+    temporales: list[tuple[Path, Path]] = []
+    for i, (ruta, destino, sufijo) in enumerate(pendientes):
+        tmp = base / f".reasig-{i}{sufijo}"
+        ruta.rename(tmp)
+        finales = base / (f"{destino}.pose.json" if sufijo == ".pose.json" else f"{destino}{sufijo}")
+        temporales.append((tmp, finales))
+
+    for tmp, final in temporales:
+        if final.exists():
+            final.unlink()
+        tmp.rename(final)
+
+    return [f"{o} → {d}" for o, d in cambios.items()]
+
+
 def descartar(raiz: Path, borrador: str) -> None:
     shutil.rmtree(carpeta(raiz) / borrador, ignore_errors=True)
 

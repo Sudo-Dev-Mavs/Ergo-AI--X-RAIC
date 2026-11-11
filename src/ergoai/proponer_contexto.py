@@ -197,3 +197,125 @@ def proponer_desde_vistas(
         "sugerencias": sugerencias,
         "vistas_detectadas": detectadas,
     }
+
+
+def _vis(mapa: dict[int, Any], indice: int) -> float:
+    p = mapa.get(indice)
+    return float(p.visibility) if p is not None else 0.0
+
+
+def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+
+
+def puntuaciones_vista(pose: VistaPose, nombre_archivo: str = "") -> dict[str, float]:
+    """Puntúa costado / frente / aérea (0–1+) según pose y nombre de archivo."""
+
+    scores = {"costado": 0.15, "frente": 0.15, "aerea": 0.1}
+    nombre = (nombre_archivo or "").lower()
+    if any(t in nombre for t in ("costado", "lado", "side", "perfil", "lateral")):
+        scores["costado"] += 0.55
+    if any(t in nombre for t in ("frente", "front", "frontal")):
+        scores["frente"] += 0.55
+    if any(t in nombre for t in ("aerea", "aérea", "aerial", "overhead", "cenital", "top", "arriba")):
+        scores["aerea"] += 0.55
+
+    if not pose.detectado or not pose.landmarks:
+        return scores
+
+    # Umbral bajo: solo para clasificar la cámara/ángulo, no para REBA.
+    mapa = {p.indice: p for p in pose.landmarks if p.visibility >= 0.25}
+    h_l, h_r = _punto(mapa, 11), _punto(mapa, 12)
+    c_l, c_r = _punto(mapa, 23), _punto(mapa, 24)
+    nariz = _punto(mapa, 0)
+    vis_hl, vis_hr = _vis(mapa, 11), _vis(mapa, 12)
+
+    if h_l and h_r:
+        ancho = _dist(h_l, h_r)
+        asimetria = abs(vis_hl - vis_hr)
+        scores["costado"] += min(0.45, asimetria * 0.7)
+        scores["frente"] += min(0.45, (1.0 - asimetria) * 0.45)
+        if nariz and ancho > 1:
+            medio_x = (h_l[0] + h_r[0]) / 2
+            centrado = 1.0 - min(1.0, abs(nariz[0] - medio_x) / (ancho * 0.6))
+            scores["frente"] += centrado * 0.35
+            scores["costado"] += (1.0 - centrado) * 0.25
+
+        caderas = _medio(mapa, (23, 24)) if c_l and c_r else None
+        hombros = ((h_l[0] + h_r[0]) / 2, (h_l[1] + h_r[1]) / 2)
+        if caderas and ancho > 1:
+            alto = _dist(hombros, caderas)
+            ratio = alto / ancho
+            # Cenital: tronco “aplastado” (poco alto vs ancho de hombros).
+            if ratio < 0.95:
+                scores["aerea"] += min(0.55, (0.95 - ratio) * 1.2)
+            if ratio > 1.15:
+                scores["aerea"] -= 0.15
+                scores["costado"] += 0.08
+                scores["frente"] += 0.08
+
+    return scores
+
+
+def clasificar_y_asignar(
+    candidatas: list[tuple[str, VistaPose, str]],
+) -> dict[str, Any]:
+    """Asigna cada imagen a una vista distinta maximizando la puntuación.
+
+    ``candidatas``: lista de (id, pose, nombre_archivo).
+    """
+
+    if not candidatas:
+        return {"ok": False, "asignaciones": [], "motivos": ["No hay imágenes para clasificar."]}
+
+    vistas = ("costado", "frente", "aerea")
+    tabla = []
+    for cid, pose, nombre in candidatas:
+        pts = puntuaciones_vista(pose, nombre)
+        tabla.append({"id": cid, "nombre": nombre, "scores": pts, "detectado": pose.detectado})
+
+    # Emparejamiento voraz por mejor score libre.
+    usadas_img: set[str] = set()
+    usadas_vista: set[str] = set()
+    pares: list[tuple[str, str, float]] = []
+    opciones = [
+        (fila["id"], vista, fila["scores"][vista])
+        for fila in tabla
+        for vista in vistas
+    ]
+    opciones.sort(key=lambda t: -t[2])
+    for cid, vista, score in opciones:
+        if cid in usadas_img or vista in usadas_vista:
+            continue
+        usadas_img.add(cid)
+        usadas_vista.add(vista)
+        pares.append((cid, vista, score))
+        if len(pares) >= min(len(candidatas), 3):
+            break
+
+    # Imágenes sobrantes → primera vista libre (por si hay más de 3 no aplica; si hay <3 ok).
+    libres = [v for v in vistas if v not in usadas_vista]
+    for fila in tabla:
+        if fila["id"] in usadas_img:
+            continue
+        if not libres:
+            break
+        vista = libres.pop(0)
+        pares.append((fila["id"], vista, fila["scores"][vista]))
+        usadas_img.add(fila["id"])
+
+    asignaciones = []
+    motivos = []
+    for cid, vista, score in pares:
+        fila = next(f for f in tabla if f["id"] == cid)
+        asignaciones.append({
+            "id": cid,
+            "vista": vista,
+            "confianza": round(float(score), 3),
+            "nombre": fila["nombre"],
+            "detectado": fila["detectado"],
+        })
+        etiqueta = "Aérea" if vista == "aerea" else vista.capitalize()
+        motivos.append(f"{fila['nombre'] or cid} → {etiqueta} (confianza {score:.2f})")
+
+    return {"ok": True, "asignaciones": asignaciones, "motivos": motivos}

@@ -289,6 +289,14 @@ export const api = {
         muneca_desviada_o_torcida?: { izquierdo?: boolean; derecho?: boolean }
       }
     }>("/api/proponer-contexto", { method: "POST", body: formulario }),
+  /** Clasifica fotos/capturas y dice a qué vista va cada una. */
+  clasificarVistas: (formulario: FormData) =>
+    pedir<{
+      ok: boolean
+      motivos: string[]
+      asignaciones: { id: string; vista: Vista; confianza: number; nombre: string; detectado: boolean }[]
+      toma_reordenada?: string[]
+    }>("/api/clasificar-vistas", { method: "POST", body: formulario }),
   validar: (id: string, cuerpo: { usuario: string; accion: string; rec_id?: string; valores?: Record<string, string>; comentario?: string }) =>
     pedirCaso(`/api/casos/${encodeURIComponent(id)}/validacion`, json(cuerpo)),
   ajustarResidual: (id: string, usuario: string, puntaje: number, comentario: string) =>
@@ -309,6 +317,6 @@ export const api = {
     return pedir<{ toma: Toma; tomas: Toma[] }>(`/api/capturas/${encodeURIComponent(borrador)}`, { method: "POST", body: formulario })
   },
   descartarTomas: (borrador: string) => pedir<ListaTomas>(`/api/capturas/${encodeURIComponent(borrador)}`, { method: "DELETE" }),
-  captura: (borrador: string, toma: string, vista: Vista) =>
-    `/api/capturas/${encodeURIComponent(borrador)}/${encodeURIComponent(toma)}/${vista}`,
+  captura: (borrador: string, toma: string, vista: Vista, bust?: number | string) =>
+    `/api/capturas/${encodeURIComponent(borrador)}/${encodeURIComponent(toma)}/${vista}${bust != null ? `?v=${bust}` : ""}`,
 }

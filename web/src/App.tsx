@@ -1,6 +1,7 @@
 import { ClipboardCheck, FilePlus2, House, LockKeyhole, PenLine, Shield } from "lucide-react"
 
 import { PolishedToaster } from "@/components/cult/halo-toast"
+import { ProveedorDialogo } from "@/components/ergo/DialogoConfirmar"
 import { Goniometro } from "@/components/ergo/goniometro"
 import { PanelOpciones } from "@/components/ergo/PanelOpciones"
 import { ProveedorEspecialista, ir, useEspecialista, useRuta } from "@/lib/app"
@@ -15,8 +16,10 @@ export function App() {
   return (
     <ProveedorPreferencias>
       <ProveedorEspecialista>
-        <Marco />
-        <PolishedToaster position="bottom-right" />
+        <ProveedorDialogo>
+          <Marco />
+          <PolishedToaster position="bottom-right" />
+        </ProveedorDialogo>
       </ProveedorEspecialista>
     </ProveedorPreferencias>
   )

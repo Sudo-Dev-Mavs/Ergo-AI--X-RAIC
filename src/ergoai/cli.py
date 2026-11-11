@@ -361,7 +361,7 @@ def ejecutar_validacion(carpeta: Path, raiz: Path, usuario: str, accion: str, re
     configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
     resultado = json.loads((carpeta / "resultado.json").read_text(encoding="utf-8"))
     validacion = val.cargar(carpeta) or val.sincronizar(carpeta, resultado)
-    if accion in ("aprobar", "rechazar", "reabrir"):
+    if accion in ("aprobar", "rechazar", "reabrir", "eliminar"):
         if not rec_id:
             raise ValueError("Indica la recomendación con --rec.")
         val.decidir(validacion, rec_id, usuario, accion, comentario)
@@ -407,7 +407,7 @@ def main() -> None:
     informe.add_argument("caso", type=Path, help="carpeta del caso o de out/<caso>")
     validar = subcomandos.add_parser("validar", help="registra una decisión del especialista en la bitácora")
     validar.add_argument("caso", type=Path, help="carpeta del caso o de out/<caso>")
-    validar.add_argument("accion", choices=("aprobar", "rechazar", "reabrir", "editar", "agregar", "ajustar_residual", "limpiar_residual", "aprobar_informe"))
+    validar.add_argument("accion", choices=("aprobar", "rechazar", "reabrir", "eliminar", "editar", "agregar", "ajustar_residual", "limpiar_residual", "aprobar_informe"))
     validar.add_argument("--usuario", required=True, help="nombre del especialista")
     validar.add_argument("--rec", help="ID de la recomendación, p. ej. R-TRONCO-ING")
     validar.add_argument("--campo", action="append", default=[], metavar="CAMPO=VALOR", help="campo a editar/agregar (repetible)")

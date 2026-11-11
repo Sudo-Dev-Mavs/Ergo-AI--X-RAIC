@@ -16,7 +16,7 @@ export const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-MX", {
 
 /** Temporizador de capturas (cada N, definido por el operador) y tira de tomas guardadas para esta evaluación. */
 export function PanelTomas({ borrador, tomas, seleccion, onSeleccion, seguirUltima, onSeguirUltima, auto, onAuto, intervaloS, onIntervalo,
-  onCapturarAhora, proximaEn, capturando, error, onDescartar, maxTomas, retencionHoras, camarasAsignadas }: {
+  onCapturarAhora, proximaEn, capturando, error, onDescartar, maxTomas, retencionHoras, camarasAsignadas, capturaBust }: {
   borrador: string
   tomas: Toma[]
   seleccion: string | null
@@ -35,6 +35,7 @@ export function PanelTomas({ borrador, tomas, seleccion, onSeleccion, seguirUlti
   maxTomas: number
   retencionHoras: number
   camarasAsignadas: number
+  capturaBust?: number
 }) {
   const [unidad, setUnidad] = useState<"s" | "min">(intervaloS >= 120 && intervaloS % 60 === 0 ? "min" : "s")
   const [texto, setTexto] = useState(String(unidad === "min" ? intervaloS / 60 : intervaloS))
@@ -105,7 +106,7 @@ export function PanelTomas({ borrador, tomas, seleccion, onSeleccion, seguirUlti
                     className={cn("rounded-[10px] p-1.5 text-left transition-colors", elegida ? "trazo-tinta" : "border border-transparent hover:border-rule")}>
                     <span className="flex gap-1">
                       {ORDEN.filter((v) => toma.vistas.includes(v)).map((v) => (
-                        <img key={v} src={api.captura(borrador, toma.id, v)} alt={`Toma ${hora(toma.fecha)}, vista ${v}`} loading="lazy"
+                        <img key={`${v}-${capturaBust ?? 0}`} src={api.captura(borrador, toma.id, v, capturaBust)} alt={`Toma ${hora(toma.fecha)}, vista ${v}`} loading="lazy"
                           className="h-14 w-[74px] rounded-md bg-ink/5 object-cover" />
                       ))}
                     </span>
