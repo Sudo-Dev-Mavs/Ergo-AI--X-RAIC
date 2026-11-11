@@ -1,11 +1,12 @@
 import { AlertTriangle, Check, Pencil, Plus, RotateCcw, X } from "lucide-react"
 import { useState } from "react"
 
-import { PopoverForm, PopoverFormButton } from "@/components/cult/popover-form"
+import { useDialogo } from "@/components/ergo/DialogoConfirmar"
 import { InfoTooltip, TituloConAyuda, humanizarReferencia } from "@/components/ergo/InfoTooltip"
 import { BorderBeam } from "@/components/magicui/border-beam"
 import type { EstadoCaso, Jerarquia, Recomendacion } from "@/lib/api"
 import { JERARQUIAS } from "@/lib/dominio"
+import { usePreferencias } from "@/lib/preferencias"
 import { cn } from "@/lib/utils"
 
 export type Accion = (accion: string, recId?: string, valores?: Record<string, string>, comentario?: string) => Promise<boolean>
@@ -22,6 +23,20 @@ export function PanelRecomendaciones({ estado, accion, ocupado, ocultarAprobarIn
   const decididas = recs.length - porDecidir
   const [agregando, setAgregando] = useState(false)
   const bloqueosResumen = estado.bloqueos.filter((m) => !m.includes("sigue como propuesta"))
+  const { preferencias } = usePreferencias()
+  const { pedir } = useDialogo()
+
+  async function aprobarInforme() {
+    if (preferencias.confirmarAcciones) {
+      const r = await pedir({
+        titulo: "¿Aprobar acciones de piso?",
+        detalle: "Se firmará el informe en la bitácora y las recomendaciones aprobadas pasarán a acción de piso.",
+        confirmarEtiqueta: "Aprobar informe",
+      })
+      if (!r.ok) return
+    }
+    await accion("aprobar_informe")
+  }
 
   return (
     <div className={cn("space-y-5", compacto && "space-y-4")}>
@@ -56,7 +71,7 @@ export function PanelRecomendaciones({ estado, accion, ocupado, ocultarAprobarIn
                 className="boton-tinta"
                 disabled={ocupado || estado.bloqueos.length > 0}
                 title={estado.bloqueos.length ? estado.bloqueos.join(" · ") : undefined}
-                onClick={() => void accion("aprobar_informe")}
+                onClick={() => void aprobarInforme()}
               >
                 <Check className="size-4" /> Aprobar acciones de piso ({decididas}/{recs.length})
               </button>
@@ -110,21 +125,49 @@ export function PanelRecomendaciones({ estado, accion, ocupado, ocultarAprobarIn
 
 function Tarjeta({ rec, accion, ocupado, compacto }: { rec: Recomendacion; accion: Accion; ocupado: boolean; compacto?: boolean }) {
   const [editando, setEditando] = useState(false)
-  const [rechazando, setRechazando] = useState(false)
-  const [motivo, setMotivo] = useState("")
+  const { preferencias } = usePreferencias()
+  const { pedir } = useDialogo()
   const rechazada = rec.estado === "rechazada"
   const aprobada = rec.estado === "aprobada"
   const avisoNom = /no usar como única medida|riesgo alto|administrativ/i.test(`${rec.problema} ${rec.solucion} ${rec.comentario ?? ""}`)
     || (rec.jerarquia === "administrativa" && /única|sustitu/i.test(rec.solucion))
 
+  async function aprobar() {
+    if (preferencias.confirmarAcciones) {
+      const r = await pedir({
+        titulo: "¿Aprobar esta recomendación?",
+        detalle: rec.problema,
+        confirmarEtiqueta: "Aprobar",
+      })
+      if (!r.ok) return
+    }
+    await accion("aprobar", rec.id)
+  }
+
+  async function rechazar() {
+    const r = await pedir({
+      titulo: "Rechazar recomendación",
+      detalle: "El motivo queda firmado en la bitácora. Puedes devolverla a propuesta después si te equivocas.",
+      confirmarEtiqueta: "Rechazar",
+      tono: "peligro",
+      motivo: {
+        etiqueta: "Motivo del rechazo",
+        placeholder: "Ej. el contenedor lo define el cliente; no aplica en esta celda…",
+        obligatorio: true,
+      },
+    })
+    if (!r.ok) return
+    await accion("rechazar", rec.id, undefined, r.motivo)
+  }
+
   if (editando) {
     return (
       <li>
         <FormularioRec titulo={`Editar ${rec.id}`} inicial={rec} ocupado={ocupado} onCancelar={() => setEditando(false)}
-          onGuardar={async (valores, aprobar) => {
+          onGuardar={async (valores, aprobarAlGuardar) => {
             const cambios = Object.fromEntries(Object.entries(valores).filter(([campo, valor]) => (rec as unknown as Record<string, string>)[campo] !== valor))
             let ok = Object.keys(cambios).length ? await accion("editar", rec.id, cambios) : true
-            if (ok && aprobar && rec.estado !== "aprobada") ok = await accion("aprobar", rec.id)
+            if (ok && aprobarAlGuardar && rec.estado !== "aprobada") ok = await accion("aprobar", rec.id)
             if (ok) setEditando(false)
           }} />
       </li>
@@ -185,24 +228,17 @@ function Tarjeta({ rec, accion, ocupado, compacto }: { rec: Recomendacion; accio
           )}
           <button className="boton-linea" disabled={ocupado} onClick={() => setEditando(true)}><Pencil className="size-4" /> Editar</button>
           {!rechazada && (
-            <PopoverForm title="✕ Rechazar" layoutKey={`rechazar-${rec.id}`} open={rechazando} setOpen={setRechazando} showSuccess={false} width="340px" height="190px" align="right"
-              triggerClassName="rounded-lg border-red-300 bg-red-50 text-red-800 hover:border-red-400 hover:bg-red-100"
-              openChild={
-                <form className="flex h-full flex-col p-3" onSubmit={async (e) => {
-                  e.preventDefault()
-                  if (!motivo.trim()) return
-                  if (await accion("rechazar", rec.id, undefined, motivo.trim())) { setRechazando(false); setMotivo("") }
-                }}>
-                  <label htmlFor={`motivo-${rec.id}`} className="pt-7 pb-1 text-[13px] text-graphite">Motivo del rechazo, queda en la bitácora</label>
-                  <textarea id={`motivo-${rec.id}`} autoFocus value={motivo} onChange={(e) => setMotivo(e.target.value)}
-                    className="flex-1 resize-none rounded-md border border-rule bg-vellum/40 p-2 text-[14px] outline-none focus:border-ink" placeholder="Ej. el contenedor lo define el cliente" />
-                  <div className="mt-2 flex"><PopoverFormButton loading={ocupado} text="Rechazar" /></div>
-                </form>
-              }
-            />
+            <button
+              type="button"
+              className="boton-linea border-red-300 bg-red-50 text-red-800 hover:border-red-400 hover:bg-red-100"
+              disabled={ocupado}
+              onClick={() => void rechazar()}
+            >
+              <X className="size-4" /> Rechazar
+            </button>
           )}
           {rec.estado !== "aprobada" && (
-            <button className="boton-tinta" disabled={ocupado} onClick={() => void accion("aprobar", rec.id)}><Check className="size-4" /> Aprobar</button>
+            <button className="boton-tinta" disabled={ocupado} onClick={() => void aprobar()}><Check className="size-4" /> Aprobar</button>
           )}
         </div>
       </div>

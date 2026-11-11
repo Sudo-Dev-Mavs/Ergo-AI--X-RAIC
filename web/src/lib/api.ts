@@ -267,6 +267,12 @@ async function pedirCaso(url: string, init?: RequestInit): Promise<EstadoCaso> {
 export const api = {
   casos: () => pedir<ResumenCaso[]>("/api/casos"),
   caso: (id: string) => pedirCaso(`/api/casos/${encodeURIComponent(id)}`),
+  /** Borra fotos, análisis e informe del caso en este equipo. */
+  eliminarCaso: (id: string, usuario: string, confirmacion: string) =>
+    pedir<{ ok: boolean; caso_id: string; eliminado_por: string }>(
+      `/api/casos/${encodeURIComponent(id)}/eliminar`,
+      json({ usuario, confirmacion }),
+    ),
   crear: (formulario: FormData) => pedirCaso("/api/casos", { method: "POST", body: formulario }),
   /** Sugiere postura/ajustes REBA desde las fotos (sin crear el caso). */
   proponerContexto: (formulario: FormData) =>

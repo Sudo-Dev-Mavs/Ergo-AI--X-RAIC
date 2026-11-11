@@ -82,6 +82,19 @@ def test_validacion_y_correccion_quedan_en_bitacora(cliente: TestClient) -> None
     assert cliente.post("/api/casos/caso01/correcciones", json={"usuario": "x", "overrides": {"inventada": 1}}).status_code == 400
 
 
+def test_eliminar_caso_completo(cliente: TestClient, tmp_path: Path) -> None:
+    _crear(cliente, "caso-borrar")
+    assert (tmp_path / "out" / "caso-borrar" / "resultado.json").is_file()
+    assert (tmp_path / "data" / "casos" / "caso-borrar").is_dir()
+    mal = cliente.post("/api/casos/caso-borrar/eliminar", json={"usuario": "Ing. Pérez", "confirmacion": "otro"})
+    assert mal.status_code == 400
+    ok = cliente.post("/api/casos/caso-borrar/eliminar", json={"usuario": "Ing. Pérez", "confirmacion": "caso-borrar"})
+    assert ok.status_code == 200 and ok.json()["ok"] is True
+    assert cliente.get("/api/casos/caso-borrar").status_code == 404
+    assert not (tmp_path / "out" / "caso-borrar").exists()
+    assert not (tmp_path / "data" / "casos" / "caso-borrar").exists()
+
+
 def test_sirve_la_interfaz_y_no_tapa_rutas_de_api(cliente: TestClient) -> None:
     raiz = cliente.get("/")
     assert raiz.status_code in (200, 503)  # 503 solo si la interfaz no está compilada

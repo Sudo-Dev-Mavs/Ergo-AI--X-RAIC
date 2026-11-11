@@ -1,6 +1,7 @@
 import { Settings2, X } from "lucide-react"
-import { useEffect, useId, useRef, useState, type ReactNode } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 
+import { HaloSwitch } from "@/components/cult/halo-switch"
 import { usePreferencias, type Preferencias } from "@/lib/preferencias"
 import { cn } from "@/lib/utils"
 
@@ -8,14 +9,45 @@ import { cn } from "@/lib/utils"
 export function PanelOpciones({ className }: { className?: string }) {
   const { preferencias, setPreferencias, resetPreferencias } = usePreferencias()
   const [abierto, setAbierto] = useState(false)
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
   const tituloId = useId()
+  const ancla = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  const boton = useRef<HTMLButtonElement>(null)
+
+  useLayoutEffect(() => {
+    if (!abierto || !boton.current) {
+      setCoords(null)
+      return
+    }
+    const colocar = () => {
+      const r = boton.current!.getBoundingClientRect()
+      const ancho = Math.min(340, window.innerWidth - 16)
+      let left = r.left
+      if (left + ancho > window.innerWidth - 8) left = Math.max(8, window.innerWidth - ancho - 8)
+      // Preferir debajo del botón; si no cabe, abrir hacia arriba.
+      const altoAprox = 420
+      const debajo = r.bottom + 8
+      const arriba = r.top - 8 - altoAprox
+      const top = debajo + altoAprox < window.innerHeight - 8 ? debajo : Math.max(8, arriba)
+      setCoords({ top, left, width: ancho })
+    }
+    colocar()
+    window.addEventListener("resize", colocar)
+    window.addEventListener("scroll", colocar, true)
+    return () => {
+      window.removeEventListener("resize", colocar)
+      window.removeEventListener("scroll", colocar, true)
+    }
+  }, [abierto])
 
   useEffect(() => {
     if (!abierto) return
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setAbierto(false) }
     const onClick = (e: MouseEvent) => {
-      if (panel.current && !panel.current.contains(e.target as Node)) setAbierto(false)
+      const t = e.target as Node
+      if (ancla.current?.contains(t) || panel.current?.contains(t)) return
+      setAbierto(false)
     }
     window.addEventListener("keydown", onKey)
     window.addEventListener("mousedown", onClick)
@@ -26,8 +58,9 @@ export function PanelOpciones({ className }: { className?: string }) {
   }, [abierto])
 
   return (
-    <div className={cn("relative", className)} ref={panel}>
+    <div className={cn("relative", className)} ref={ancla}>
       <button
+        ref={boton}
         type="button"
         className={cn(
           "inline-flex w-full items-center justify-start gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-[14px] font-medium text-white transition-colors hover:bg-white/15",
@@ -40,12 +73,14 @@ export function PanelOpciones({ className }: { className?: string }) {
         <Settings2 className="size-4" strokeWidth={1.75} />
         Opciones
       </button>
-      {abierto && (
+      {abierto && coords && (
         <div
+          ref={panel}
           id={tituloId}
           role="dialog"
           aria-label="Opciones de la interfaz"
-          className="absolute top-[calc(100%+8px)] left-0 z-40 w-[min(100vw-2rem,340px)] rounded-xl border border-rule bg-sheet p-4 shadow-[0_12px_40px_-12px_rgba(0,56,118,0.35)] lg:left-0"
+          className="fixed z-[70] max-h-[min(70dvh,520px)] overflow-y-auto rounded-xl border border-rule bg-sheet p-4 shadow-[0_12px_40px_-12px_rgba(0,56,118,0.35)]"
+          style={{ top: coords.top, left: coords.left, width: coords.width }}
         >
           <div className="mb-3 flex items-center justify-between">
             <p className="t-title text-[15px] text-jabil">Preferencias</p>
@@ -130,10 +165,17 @@ function Toggle({
 }) {
   const id = useId()
   return (
-    <li className="grid gap-1">
+    <li className="grid gap-1.5">
       <div className="flex items-center justify-between gap-3">
-        <label htmlFor={id} className="font-medium text-ink-soft">{etiqueta}</label>
-        <input id={id} type="checkbox" className="size-4 accent-[var(--jabil)]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <label htmlFor={id} className="min-w-0 flex-1 font-medium text-ink-soft">{etiqueta}</label>
+        <HaloSwitch
+          id={id}
+          size="sm"
+          translucent={false}
+          checked={checked}
+          onCheckedChange={(v) => onChange(Boolean(v))}
+          aria-label={etiqueta}
+        />
       </div>
       <p className="text-[11px] leading-snug text-graphite">{ayuda}</p>
     </li>

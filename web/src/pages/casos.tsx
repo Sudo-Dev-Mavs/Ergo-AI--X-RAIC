@@ -1,10 +1,11 @@
-import { ChevronDown, FilePlus2, RefreshCw } from "lucide-react"
+import { ChevronDown, FilePlus2, RefreshCw, Trash2 } from "lucide-react"
 import { useState } from "react"
 
-import { BlurFade } from "@/components/magicui/blur-fade"
+import { useDialogo } from "@/components/ergo/DialogoConfirmar"
 import { ReglaRiesgo } from "@/components/ergo/regla-riesgo"
+import { BlurFade } from "@/components/magicui/blur-fade"
 import { api, type RangoReba, type ResumenCaso } from "@/lib/api"
-import { ir } from "@/lib/app"
+import { avisar, ir, useEspecialista } from "@/lib/app"
 import { colorPuntoCaso, colorRiesgo, etiquetaReba, etiquetaTarea, fechaCorta, textoRango } from "@/lib/dominio"
 import { useDatos } from "@/lib/useDatos"
 import { cn } from "@/lib/utils"
@@ -84,7 +85,7 @@ export function CasosPage() {
             <ol className="divide-y divide-rule-soft" aria-label="Casos evaluados">
               {casos.map((caso, i) => (
                 <BlurFade key={caso.caso_id} delay={0.03 * Math.min(i, 8)}>
-                  <FilaCaso caso={caso} />
+                  <FilaCaso caso={caso} onEliminado={() => void recargar()} />
                 </BlurFade>
               ))}
             </ol>
@@ -134,7 +135,10 @@ function textoResidual(caso: ResumenCaso, rango: RangoReba | null): string {
   return caso.residual != null && caso.residual < (caso.reba ?? 0) ? `Tras mejoras ${residual}` : "Sin reducción residual"
 }
 
-function FilaCaso({ caso }: { caso: ResumenCaso }) {
+function FilaCaso({ caso, onEliminado }: { caso: ResumenCaso; onEliminado: () => void }) {
+  const { pedirFirma } = useEspecialista()
+  const { pedir } = useDialogo()
+  const [borrando, setBorrando] = useState(false)
   const urgente = (caso.nivel_accion ?? 0) >= 3 && caso.estado_informe !== "aprobado"
   const estadoPrincipal = caso.estado_informe === "aprobado"
     ? { texto: "Aprobado", cls: "bg-jabil text-white" }
@@ -144,9 +148,37 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
   // Puntaje pendiente con rango: se muestra el rango y, si todo cae en un nivel, ese nivel como estimado.
   const rango = caso.reba == null ? caso.reba_rango ?? null : null
 
+  async function eliminar() {
+    const usuario = pedirFirma()
+    if (!usuario) return
+    const id = caso.caso_id
+    const r = await pedir({
+      titulo: `¿Eliminar el caso «${id}»?`,
+      detalle: "Se borran de este equipo las fotos, el análisis, la validación y el informe. No se puede deshacer.",
+      confirmarEtiqueta: "Eliminar caso",
+      tono: "peligro",
+      motivo: { etiqueta: `Escribe ${id} para confirmar`, placeholder: id, obligatorio: true },
+    })
+    if (!r.ok) return
+    if (r.motivo !== id) {
+      avisar({ titulo: "Confirmación incorrecta", detalle: `Debes escribir exactamente «${id}».`, tipo: "error" })
+      return
+    }
+    setBorrando(true)
+    try {
+      await api.eliminarCaso(id, usuario, r.motivo)
+      avisar({ titulo: "Caso eliminado", detalle: `«${id}» ya no está en este equipo.` })
+      onEliminado()
+    } catch (e) {
+      avisar({ titulo: "No se eliminó el caso", detalle: e instanceof Error ? e.message : String(e), tipo: "error" })
+    } finally {
+      setBorrando(false)
+    }
+  }
+
   return (
-    <li>
-      <a href={`#/caso/${encodeURIComponent(caso.caso_id)}`} className="group flex items-stretch gap-3 px-5 py-4 transition-colors hover:bg-jabil/[0.03]">
+    <li className="flex items-stretch gap-1 px-2 py-1 sm:px-3">
+      <a href={`#/caso/${encodeURIComponent(caso.caso_id)}`} className="group flex min-w-0 flex-1 items-stretch gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-jabil/[0.03]">
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -191,6 +223,16 @@ function FilaCaso({ caso }: { caso: ResumenCaso }) {
           {caso.por_validar > 0 && caso.estado_informe !== "aprobado" ? "Validar" : "Abrir"}
         </span>
       </a>
+      <button
+        type="button"
+        className="boton-linea my-3 self-center px-2.5 text-red-800 hover:border-red-300 hover:bg-red-50"
+        disabled={borrando}
+        title="Eliminar caso completo"
+        aria-label={`Eliminar caso ${caso.caso_id}`}
+        onClick={() => void eliminar()}
+      >
+        <Trash2 className="size-4" />
+      </button>
     </li>
   )
 }

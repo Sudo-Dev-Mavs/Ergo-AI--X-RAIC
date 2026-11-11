@@ -100,6 +100,11 @@ class SolicitudCorreccion(BaseModel):
     comentario: str = ""
 
 
+class SolicitudEliminarCaso(BaseModel):
+    usuario: str = Field(min_length=1)
+    confirmacion: str = Field(min_length=1, description="Debe coincidir con el caso_id.")
+
+
 def _clave_override(angulo: dict[str, Any]) -> str:
     medida, lado = angulo["medida"], angulo.get("lado")
     return f"{medida}_{lado}" if lado and medida != "cuello_flexion" else medida
@@ -214,6 +219,24 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
     @app.get("/api/casos/{caso_id}")
     def obtener_caso(caso_id: str) -> dict[str, Any]:
         return estado(caso_id)
+
+    @app.post("/api/casos/{caso_id}/eliminar")
+    def eliminar_caso(caso_id: str, solicitud: SolicitudEliminarCaso) -> dict[str, Any]:
+        """Borra del equipo las carpetas de entrada y salida del caso (fotos, análisis, informe)."""
+
+        caso = validar_id(caso_id)
+        if solicitud.confirmacion.strip() != caso:
+            raise HTTPException(400, f"Para eliminar escribe exactamente el identificador «{caso}».")
+        entrada = carpeta_entrada(caso)
+        salida = raiz / "out" / caso
+        if not entrada.is_dir() and not (salida / "resultado.json").is_file() and not salida.is_dir():
+            raise HTTPException(404, f"No existe el caso «{caso}».")
+        with candado:
+            if salida.is_dir():
+                shutil.rmtree(salida)
+            if entrada.is_dir():
+                shutil.rmtree(entrada)
+        return {"ok": True, "caso_id": caso, "eliminado_por": solicitud.usuario.strip()}
 
     @app.post("/api/casos")
     def crear_caso(
