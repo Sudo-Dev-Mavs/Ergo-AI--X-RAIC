@@ -24,6 +24,22 @@ from . import validacion as val
 
 VISTAS = ("frente", "costado", "aerea")
 EXTENSIONES_IMAGEN = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
+# Umbral de visibilidad solo para DIBUJAR la vista aérea (desde arriba MediaPipe da poca confianza);
+# la medición REBA sigue usando ``pose.vis_min``.
+VIS_DIBUJO_AEREA = 0.22
+
+
+def _medidas_para_anotar(angulos: list[MedicionAngulo], vista: str) -> list[MedicionAngulo]:
+    """Medidas a dibujar en una foto. La aérea siempre muestra torsión si existe valor,
+    aunque el respaldo 3D la haya etiquetado en costado/frente."""
+
+    propias = [m for m in angulos if m.vista == vista and m.valor_deg is not None]
+    if vista != "aerea":
+        return propias
+    if any(m.medida == "tronco_torsion" for m in propias):
+        return propias
+    torsion = next((m for m in angulos if m.medida == "tronco_torsion" and m.valor_deg is not None), None)
+    return [*propias, torsion] if torsion is not None else propias
 
 
 def _area_visible(persona: PoseResult, vis_min: float) -> float:
@@ -147,7 +163,9 @@ def ejecutar_pose(caso: Path, raiz: Path, backend: PoseBackend | None = None, ca
         vistas[nombre] = vista.a_diccionario(configuracion.pose.vis_min)
         if cacheadas is not None:
             vistas[nombre]["fuente_pose"] = "pose detectada antes de difuminar el rostro"
-        guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min)
+        # Aérea: MediaPipe suele marcar poca visibilidad desde arriba; bajamos solo el umbral de dibujo.
+        vis_esqueleto = VIS_DIBUJO_AEREA if nombre == "aerea" else configuracion.pose.vis_min
+        guardar_esqueleto(destino / f"{nombre}_pose.png", imagen.pixeles, vista.landmarks, vis_esqueleto)
         if not vista.detectado:
             advertencias.append(f"vista {nombre}: {vista.motivo}")
     if not vistas:
@@ -205,9 +223,14 @@ def ejecutar_angulos(caso: Path, raiz: Path, backend: PoseBackend | None = None,
         ruta_imagen = _ruta_vista(caso, nombre)
         if ruta_imagen is not None:
             imagen = cargar_imagen(ruta_imagen)
-            de_vista = [m for m in angulos if m.vista == nombre]
+            de_vista = _medidas_para_anotar(angulos, nombre)
             bandas = [banda_medida(m.medida, m.valor_deg, configuracion.reba) for m in de_vista]
-            guardar_angulos(destino / f"{nombre}_angulos.png", imagen.pixeles, vista.landmarks, configuracion.pose.vis_min, de_vista, bandas)
+            # Aérea: MediaPipe suele marcar poca visibilidad; bajamos solo el umbral de dibujo.
+            vis_dibujo = VIS_DIBUJO_AEREA if nombre == "aerea" else None
+            guardar_angulos(
+                destino / f"{nombre}_angulos.png", imagen.pixeles, vista.landmarks,
+                configuracion.pose.vis_min, de_vista, bandas, vis_dibujo=vis_dibujo,
+            )
     salida = {
         "caso_id": pose["caso_id"], "version_modelo": pose["version_modelo"],
         "vistas": pose["vistas"], "vectores": vectores_salida,
@@ -234,6 +257,36 @@ def _mediciones_para_reba(angulos: list[dict[str, Any]], overrides: dict[str, An
             angulo["fuente"] = "especialista"
         mediciones[clave] = angulo.get("valor_deg")
     return mediciones
+
+
+def _clave_pendiente(pendiente: dict[str, Any]) -> str:
+    """Clave de ``mediciones_reba`` para un pendiente: «codo_flexion» + lado L → «codo_flexion_L»."""
+
+    medida = str(pendiente.get("medida") or "")
+    lado = pendiente.get("lado")
+    if lado in ("L", "R") and not medida.endswith(("_L", "_R")) and medida != "cuello_flexion":
+        return f"{medida}_{lado}"
+    return medida
+
+
+def _compactar_pendientes(pendientes: list[dict[str, Any]], mediciones: dict[str, float | None]) -> list[dict[str, Any]]:
+    """Una entrada por medida y lado; quita los avisos de «no medible» de lo que ya tiene valor usable.
+
+    Ángulos y REBA avisan por separado de la misma medida, y un respaldo o una corrección del
+    especialista puede dar valor a una medida que la vista primaria no logró medir.
+    """
+
+    vistos: set[str] = set()
+    salida: list[dict[str, Any]] = []
+    for pendiente in pendientes:
+        clave = _clave_pendiente(pendiente)
+        motivo = str(pendiente.get("motivo") or "").lower()
+        falta_medicion = any(texto in motivo for texto in ("landmark", "ausente", "no utilizable"))
+        if (falta_medicion and mediciones.get(clave) is not None) or clave in vistos:
+            continue
+        vistos.add(clave)
+        salida.append(pendiente)
+    return salida
 
 
 def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None, carpeta_salida: Path | None = None,
@@ -269,6 +322,7 @@ def ejecutar_evaluar(caso: Path, raiz: Path, backend: PoseBackend | None = None,
                 angulo["banda_reba"] = reba.grupo_b[lado][campo]
     salida["reba"] = reba.a_diccionario()
     salida["pendientes_manuales"].extend(reba.pendientes_manuales)
+    salida["pendientes_manuales"] = _compactar_pendientes(salida["pendientes_manuales"], mediciones)
     salida["contexto"] = contexto
     salida["mediciones_reba"] = mediciones
     salida["fecha_analisis"] = datetime.now().astimezone().isoformat(timespec="seconds")

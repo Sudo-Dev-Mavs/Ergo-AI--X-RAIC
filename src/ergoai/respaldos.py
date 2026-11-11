@@ -13,6 +13,7 @@ perpendicular al eje lateral y el frontal contiene ambos.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Callable
 
 from .angulos import MedicionAngulo, _banderas, _mapa, construir_vectores, corregir_inclinacion_camara
@@ -183,7 +184,10 @@ def completar_con_respaldos(medidas: list[MedicionAngulo], vistas: dict[str, Vis
             return None
         extra = ["baja_confianza_metodo"] if magnitud else []
         metodo = f"respaldo 3D (pose de {c.vista})" + (": solo magnitud, se asume flexión" if magnitud else "")
-        return nueva(medida, lado, valor, c.vista, metodo, c.confianza(*indices), extra)
+        # La torsión es medida primaria de la aérea: si el caso tiene foto cenital,
+        # etiquétala ahí (aunque la pose cenital haya fallado) para no saturar el costado.
+        vista_etiqueta = "aerea" if medida == "tronco_torsion" and "aerea" in vistas else c.vista
+        return nueva(medida, lado, valor, vista_etiqueta, metodo, c.confianza(*indices), extra)
 
     def apoyo() -> MedicionAngulo | None:
         # Altura de los tobillos en la pose 3D (metros, eje y vertical de la cámara). No se usa la foto de
@@ -219,6 +223,10 @@ def completar_con_respaldos(medidas: list[MedicionAngulo], vistas: dict[str, Vis
                     resultado.append(medicion)
                     posicion[(medida, lado)] = len(resultado) - 1
                 else:
+                    # Conserva «aerea» como vista de la torsión para que la foto cenital
+                    # reciba la etiqueta aunque el valor venga de pose 3D de otra cámara.
+                    if medida == "tronco_torsion" and resultado[indice].vista == "aerea":
+                        medicion = replace(medicion, vista="aerea")
                     resultado[indice] = medicion
                 break
     return resultado

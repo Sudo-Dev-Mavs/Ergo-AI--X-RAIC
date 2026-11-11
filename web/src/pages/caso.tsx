@@ -1,10 +1,11 @@
 import { ArrowLeft, Download, ExternalLink, Printer } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { DirectionAwareTabs } from "@/components/cult/direction-aware-tabs"
 import { PanelBitacora } from "@/components/ergo/bitacora"
 import { ComparadorResidual } from "@/components/ergo/ComparadorResidual"
 import { Goniometro } from "@/components/ergo/goniometro"
+import { InfoTooltip, TituloConAyuda } from "@/components/ergo/InfoTooltip"
 import { PanelPostura } from "@/components/ergo/postura"
 import { PanelRecomendaciones } from "@/components/ergo/recomendaciones"
 import { VisorFoto } from "@/components/ergo/VisorFoto"
@@ -29,8 +30,13 @@ export function CasoPage({ id }: { id: string }) {
   async function accion(nombre: string, recId?: string, valores?: Record<string, string>, comentario?: string) {
     const usuario = pedirFirma()
     if (!usuario) return false
-    if (preferencias.confirmarAcciones && nombre === "aprobar_informe") {
-      if (!window.confirm("¿Aprobar el informe y generar las acciones de piso? Quedará firmado en la bitácora.")) return false
+    if (preferencias.confirmarAcciones) {
+      const pregunta =
+        nombre === "aprobar_informe" ? "¿Aprobar el informe y generar las acciones de piso? Quedará firmado en la bitácora."
+        : nombre === "aprobar" ? "¿Aprobar esta recomendación?"
+        : nombre === "rechazar" ? "¿Rechazar esta recomendación?"
+        : null
+      if (pregunta && !window.confirm(pregunta)) return false
     }
     setOcupado(true)
     try {
@@ -105,33 +111,52 @@ export function CasoPage({ id }: { id: string }) {
         </span>
       </header>
 
-      <section className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,1fr)]">
+      <p className="mt-5 rounded-lg border border-rule-soft bg-slate-50 px-3.5 py-2.5 text-[13px] leading-snug text-ink-soft">
+        <span className="font-medium text-jabil">Nota:</span>{" "}
+        Los valores <TituloConAyuda clave="reba" className="inline-flex">REBA</TituloConAyuda> miden la postura del 1 al 15.
+        El <TituloConAyuda clave="residual" className="inline-flex">riesgo esperado tras mejoras</TituloConAyuda> muestra cómo bajará el peligro
+        al aplicar las recomendaciones de <TituloConAyuda clave="nom036" className="inline-flex">NOM-036</TituloConAyuda>.
+      </p>
+
+      <section className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,1fr)]">
         <Muestra id={id} estado={estado} version={version} />
         <div className="flex flex-col">
           <Goniometro inicial={reba.final.reportado} residual={residual.residual.reba} nivel={reba.nivel_riesgo} nivelResidual={residual.residual.nivel_riesgo} tamano={340} className="mx-auto" />
           <p className="text-center text-[15px] text-ink-soft">
             {reba.nivel_riesgo
-              ? `Acción ${accionRiesgo(reba.nivel_riesgo).toLowerCase()}`
+              ? <>Estatus: {accionRiesgo(reba.nivel_riesgo)}</>
               : reba.final.rango
                 ? `Falta un dato: el REBA queda entre ${reba.final.rango.min} y ${reba.final.rango.max}${reba.final.rango.nivel ? `, nivel ${reba.final.rango.nivel.toLowerCase()} en cualquier caso` : ""}. Complétalo en Postura medida.`
                 : "Faltan datos para el REBA: revisa la pestaña Postura medida."}
           </p>
           <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border border-rule bg-rule">
             {residual.residual.reba == null && residual.residual.rango ? (
-              <Cifra titulo="Residual esperado" valor={textoRango(residual.residual.rango)}
-                nota={residual.residual.rango.nivel ? `${residual.residual.rango.nivel}, estimado` : "Rango estimado"} color={colorRiesgo(residual.residual.rango.nivel)} />
+              <Cifra
+                titulo={<>Tras mejoras <InfoTooltip clave="residual" /></>}
+                valor={textoRango(residual.residual.rango)}
+                nota={residual.residual.rango.nivel ? `${residual.residual.rango.nivel}, estimado` : "Rango estimado"}
+                color={colorRiesgo(residual.residual.rango.nivel)}
+              />
             ) : (
-              <Cifra titulo="Residual esperado" valor={residual.residual.reba} nota={residual.residual.nivel_riesgo ?? "Pendiente"} color={colorRiesgo(residual.residual.nivel_riesgo)} />
+              <Cifra
+                titulo={<>Tras mejoras <InfoTooltip clave="residual" /></>}
+                valor={residual.residual.reba}
+                nota={residual.residual.nivel_riesgo ? `${residual.residual.nivel_riesgo}${residual.residual.reba != null ? ` (${residual.residual.reba})` : ""}` : "Pendiente"}
+                color={colorRiesgo(residual.residual.nivel_riesgo)}
+              />
             )}
             <Cifra titulo="Reducción" valor={residual.reduccion_puntos == null ? null : residual.reduccion_puntos > 0 ? `−${residual.reduccion_puntos}` : "0"}
               nota={residual.reduccion_pct == null ? "Sin datos suficientes"
                 : `${residual.reduccion_pct} % con ${residual.recomendaciones_aplicadas.length} ${residual.recomendaciones_aplicadas.length === 1 ? "control" : "controles"}`} />
             <Cifra titulo="Lado reportado" valor={reba.final.lado === "L" ? "Izq." : reba.final.lado === "R" ? "Der." : null} nota={`Izq. ${reba.final.L ?? "—"}, der. ${reba.final.R ?? "—"}`} />
-            <Cifra titulo="Grupo A y B" valor={reba.grupo_a.puntaje_a != null ? `${reba.grupo_a.puntaje_a} / ${reba.final.lado ? reba.grupo_b[reba.final.lado].puntaje_b ?? "—" : "—"}` : null}
-              nota={`Actividad +${reba.actividad}`} />
+            <Cifra
+              titulo={<>Grupo A y B <InfoTooltip clave="grupoAB" /></>}
+              valor={reba.grupo_a.puntaje_a != null ? `${reba.grupo_a.puntaje_a} / ${reba.final.lado ? reba.grupo_b[reba.final.lado].puntaje_b ?? "—" : "—"}` : null}
+              nota={`Actividad +${reba.actividad}`}
+            />
           </div>
           <p className="mt-3 text-[13px] leading-snug text-graphite">
-            Aguja sólida: REBA medido. Aguja punteada: riesgo esperado si se aplican los controles no rechazados, recalculado con el mismo método.
+            Aguja sólida: REBA medido hoy. Aguja punteada: riesgo esperado tras aplicar los controles no rechazados.
           </p>
         </div>
       </section>
@@ -174,10 +199,10 @@ function Dato({ termino, valor }: { termino: string; valor: string }) {
   )
 }
 
-function Cifra({ titulo, valor, nota, color }: { titulo: string; valor: string | number | null; nota: string; color?: string }) {
+function Cifra({ titulo, valor, nota, color }: { titulo: ReactNode; valor: string | number | null; nota: string; color?: string }) {
   return (
     <div className="bg-sheet px-4 py-3">
-      <p className="text-[13px] text-graphite">{titulo}</p>
+      <p className="flex flex-wrap items-center gap-1 text-[13px] text-graphite">{titulo}</p>
       <p className="t-num text-[30px] leading-tight" style={color ? { color } : undefined}>{valor ?? "—"}</p>
       <p className="text-[13px] text-ink-soft">{nota}</p>
     </div>
@@ -189,6 +214,9 @@ function Muestra({ id, estado, version }: { id: string; estado: EstadoCaso; vers
   const vistas = (["costado", "frente", "aerea"] as Vista[]).filter((v) => estado.imagenes.includes(v) || estado.fotos.includes(v))
   const [vista, setVista] = useState<Vista>(vistas[0] ?? "costado")
   const [original, setOriginal] = useState(preferencias.fotoInicial === "original")
+  useEffect(() => {
+    setOriginal(preferencias.fotoInicial === "original")
+  }, [preferencias.fotoInicial, id])
   const anotada = estado.imagenes.includes(vista)
   const src = vistas.length
     ? (original || !anotada ? api.foto(id, vista) : api.archivo(id, `${vista}_angulos.png`, version))

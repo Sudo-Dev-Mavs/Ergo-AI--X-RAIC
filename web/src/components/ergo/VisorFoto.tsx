@@ -1,5 +1,6 @@
-import { CircleHelp, Maximize2, Minus, Plus, RotateCcw } from "lucide-react"
+import { CircleHelp, Maximize2, Minus, Plus, RotateCcw, X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 
 import { usePreferencias } from "@/lib/preferencias"
 import { cn } from "@/lib/utils"
@@ -16,13 +17,14 @@ const MIN = 1
 const MAX = 5
 const PASO = 0.25
 
-/** Visor: zoom, pan, teclado. Ayuda en ícono «?» (no tapa la foto). */
+/** Visor: zoom, pan, teclado. El ícono □□ abre la foto a pantalla completa. */
 export function VisorFoto({ src, alt, className, barraExtra, vacio }: Props) {
   const { preferencias } = usePreferencias()
   const marco = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [ayudaAbierta, setAyudaAbierta] = useState(false)
+  const [ampliada, setAmpliada] = useState(false)
   const arrastre = useRef<{ id: number; x: number; y: number; ox: number; oy: number } | null>(null)
 
   const reset = useCallback(() => {
@@ -67,6 +69,20 @@ export function VisorFoto({ src, alt, className, barraExtra, vacio }: Props) {
       nodo.removeEventListener("wheel", onWheelNative)
     }
   }, [reset, src])
+
+  useEffect(() => {
+    if (!ampliada) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAmpliada(false)
+    }
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [ampliada])
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (!src || zoom <= 1 || e.button !== 0) return
@@ -123,7 +139,7 @@ export function VisorFoto({ src, alt, className, barraExtra, vacio }: Props) {
             </button>
             {ayudaAbierta && (
               <div className="absolute top-9 right-0 w-56 rounded-lg border border-rule bg-sheet p-3 text-[12px] leading-snug text-ink-soft shadow-lg">
-                Rueda o +/−: zoom. Arrastra con zoom: mover. Doble clic o 0: reset. Teclado: + − 0.
+                Rueda o +/−: zoom. Arrastra con zoom: mover. Doble clic o 0: reset. □□ amplía a pantalla completa.
               </div>
             )}
           </div>
@@ -136,10 +152,37 @@ export function VisorFoto({ src, alt, className, barraExtra, vacio }: Props) {
           <span className="t-num min-w-[3.5rem] text-center text-[13px] text-graphite">{Math.round(zoom * 100)}%</span>
           <BotonVista aria="Acercar" onClick={() => setZoom((z) => Math.min(MAX, +(z + PASO).toFixed(2)))} disabled={!src || zoom >= MAX}><Plus className="size-4" /></BotonVista>
           <BotonVista aria="Restablecer zoom" onClick={reset} disabled={!src || (zoom === 1 && offset.x === 0 && offset.y === 0)}><RotateCcw className="size-4" /></BotonVista>
-          <BotonVista aria="Enfocar visor" onClick={() => marco.current?.focus()} disabled={!src}><Maximize2 className="size-4" /></BotonVista>
+          <BotonVista aria="Ampliar imagen" onClick={() => setAmpliada(true)} disabled={!src}><Maximize2 className="size-4" /></BotonVista>
         </div>
         {barraExtra}
       </div>
+
+      {ampliada && src && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt}
+          onClick={() => setAmpliada(false)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 z-[101] rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
+            aria-label="Cerrar imagen ampliada"
+            onClick={() => setAmpliada(false)}
+          >
+            <X className="size-5" />
+          </button>
+          <img
+            src={src}
+            alt={alt}
+            draggable={false}
+            className="max-h-[min(96vh,100%)] max-w-[min(96vw,100%)] object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

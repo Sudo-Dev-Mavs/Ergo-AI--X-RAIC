@@ -54,8 +54,13 @@ export function ValidacionPage({ casoIdInicial }: { casoIdInicial?: string }) {
     if (!activoId) return false
     const usuario = pedirFirma()
     if (!usuario) return false
-    if (preferencias.confirmarAcciones && nombre === "aprobar_informe") {
-      if (!window.confirm("¿Aprobar el informe y generar las acciones de piso?")) return false
+    if (preferencias.confirmarAcciones) {
+      const pregunta =
+        nombre === "aprobar_informe" ? "¿Aprobar el informe y generar las acciones de piso?"
+        : nombre === "aprobar" ? "¿Aprobar esta recomendación?"
+        : nombre === "rechazar" ? "¿Rechazar esta recomendación?"
+        : null
+      if (pregunta && !window.confirm(pregunta)) return false
     }
     setOcupado(true)
     try {

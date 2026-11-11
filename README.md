@@ -90,7 +90,7 @@ uv run ergoai-gui                    # abre http://127.0.0.1:8765/
 uv run ergoai-gui --sin-navegador    # solo el servidor
 ```
 
-La interfaz ya viene compilada en `src/ergoai/web/dist`; no hace falta Node para usarla. Escribe tu nombre en **Firmas como** (riel lateral): cada decisión queda registrada con él. En el mismo riel, **Opciones** ajusta la densidad de la interfaz, la foto con que abre un caso (anotada u original), si se pide confirmación al aprobar o rechazar y si el visor muestra sus atajos; se guardan en este equipo.
+La interfaz ya viene compilada en `src/ergoai/web/dist`; no hace falta Node para usarla. Escribe tu nombre en **Firmas como** (riel lateral): cada decisión queda registrada con él. En el mismo riel, **Opciones** ajusta la densidad de la interfaz (cómoda o compacta), la foto con que abre un caso (anotada u original), si se pide confirmación al aprobar, rechazar o firmar el informe y si el visor muestra sus atajos; cada opción explica qué cambia, se guardan en este equipo y no tocan el cálculo REBA. Los términos técnicos (REBA, riesgo tras mejoras, NOM-036, grupos A y B) traen un «?» con su explicación en lenguaje común.
 
 **Inicio · Evaluaciones ergonómicas**
 - Botón **Nueva evaluación** en el encabezado y, al costado, **Cómo funciona** (plegable).
@@ -110,14 +110,14 @@ Con costado y frente se obtiene un REBA completo; la aérea agrega la torsión d
 
 **Validación**
 - **Cola** con los casos cuyo informe no está aprobado, ordenada por nivel de riesgo y propuestas pendientes; se puede ocultar.
-- Al centro, la evidencia (visor de fotos con zoom, costado, frente y aérea, anotada u original) y las recomendaciones para aprobar, editar o rechazar.
-- A la derecha, el comparador **Inicial vs Residual**. Si el especialista considera que el agente fue optimista, mueve el control del residual (1–15), escribe el motivo y guarda: el residual queda como «Ajuste manual», el cambio entra en la bitácora y el informe vuelve a BORRADOR. **Restaurar IA** regresa al residual calculado por el agente.
+- Al centro, la evidencia (visor de fotos con zoom y pantalla completa; costado, frente y aérea; casilla **Original** para ver la foto sin anotaciones) y las recomendaciones para aprobar, editar o rechazar. Cada recomendación explica «¿Por qué se sugiere esta medida?» en lenguaje común, con la referencia completa al pasar el mouse.
+- A la derecha, el comparador **Medido hoy vs Tras mejoras** (REBA inicial y residual). Si el especialista considera que el agente fue optimista, mueve el control del residual (1–15), escribe el motivo y guarda: el residual queda como «Ajuste manual», el cambio entra en la bitácora y el informe vuelve a BORRADOR. **Restaurar IA** regresa al residual calculado por el agente.
 - **Aprobar acciones de piso** se habilita cuando hay nombre en «Firmas como», no quedan propuestas sin decidir y no hay bloqueos.
 
 **Caso**
-- Goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), datos de la tarea, tiempo de análisis y el comparador Inicial vs Residual.
+- Goniómetro con el REBA medido (aguja sólida) y el residual esperado (aguja punteada), datos de la tarea, tiempo de análisis y el comparador Medido hoy vs Tras mejoras.
 - **Recomendaciones**: aprobar, editar, rechazar con motivo o agregar controles propios. **Aprobar informe** se habilita cuando no quedan propuestas sin decidir. Las propuestas se dibujan con borde punteado, las aprobadas con trazo sólido y las rechazadas tachadas.
-- **Postura medida**: ángulos por segmento con su banda REBA y banderas. El especialista puede corregir un ángulo; ErgoAI recalcula y lo registra.
+- **Postura medida**: ángulos por segmento con su banda REBA y banderas. El especialista puede corregir un ángulo (el ° se agrega solo) o el apoyo de piernas con Sí/No; ErgoAI recalcula y lo registra. «Revisar en piso» muestra cada dato pendiente una sola vez y omite lo que ya tiene valor.
 - **Bitácora**: historial firmado con verificación de integridad.
 - **Informe**: vista previa, impresión a PDF y descarga del CSV para el formato 00014.
 
@@ -253,6 +253,7 @@ Que el servidor escuche solo en `127.0.0.1` no basta: cualquier página abierta 
   - «?» cuando la medida tiene banderas, y una leyenda.
 
   Las medidas que vienen de la pose 3D se rotulan sin flecha.
+  Las etiquetas se escalan al tamaño de la persona (no solo de la foto) y se colocan fuera del cuerpo y de la leyenda, primero las de mayor riesgo. La vista aérea dibuja el esqueleto con un umbral de visibilidad más bajo, solo al dibujar (desde arriba MediaPipe da poca confianza), y siempre muestra la torsión aunque venga del respaldo 3D.
 
 ### REBA
 
@@ -358,7 +359,7 @@ La interfaz (`web/`) usa React 19, TypeScript, Tailwind CSS 4 y `motion`, con co
 uv run pytest
 ```
 
-Son 88 pruebas deterministas, sin fotografías confidenciales; usan detectores sintéticos. **No sustituyen** la medición de precisión con fotos reales ([protocolo](docs/PROTOCOLO_VALIDACION.md)). Cubren:
+Son 94 pruebas deterministas, sin fotografías confidenciales; usan detectores sintéticos. **No sustituyen** la medición de precisión con fotos reales ([protocolo](docs/PROTOCOLO_VALIDACION.md)). Cubren:
 
 - geometría, ángulos y bandas REBA;
 - el respaldo 3D, verificado con poses 3D construidas con ángulos conocidos, el respaldo de frente y las imágenes anotadas;

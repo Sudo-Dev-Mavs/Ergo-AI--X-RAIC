@@ -128,10 +128,10 @@ function textoResidual(caso: ResumenCaso, rango: RangoReba | null): string {
     : caso.residual_rango ? `${textoRango(caso.residual_rango)}, estimado` : null
   const previo = caso.reba == null ? "Falta un dato" : null
   if (caso.origen_residual === "especialista" && residual) {
-    return `${previo ? `${previo}; r` : "R"}esidual ${residual}, fijado por el especialista`
+    return `${previo ? `${previo}; t` : "T"}ras mejoras ${residual}, fijado por el especialista`
   }
-  if (previo) return `${previo}${residual ? `; residual ${residual}` : ""}`
-  return caso.residual != null && caso.residual < (caso.reba ?? 0) ? `Residual ${residual}` : "Sin reducción residual"
+  if (previo) return `${previo}${residual ? `; tras mejoras ${residual}` : ""}`
+  return caso.residual != null && caso.residual < (caso.reba ?? 0) ? `Tras mejoras ${residual}` : "Sin reducción residual"
 }
 
 function FilaCaso({ caso }: { caso: ResumenCaso }) {

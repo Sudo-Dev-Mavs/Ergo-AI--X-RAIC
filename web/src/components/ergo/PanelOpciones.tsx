@@ -1,5 +1,5 @@
 import { Settings2, X } from "lucide-react"
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState, type ReactNode } from "react"
 
 import { usePreferencias, type Preferencias } from "@/lib/preferencias"
 import { cn } from "@/lib/utils"
@@ -45,7 +45,7 @@ export function PanelOpciones({ className }: { className?: string }) {
           id={tituloId}
           role="dialog"
           aria-label="Opciones de la interfaz"
-          className="absolute top-[calc(100%+8px)] left-0 z-40 w-[min(100vw-2rem,320px)] rounded-xl border border-rule bg-sheet p-4 shadow-[0_12px_40px_-12px_rgba(0,56,118,0.35)] lg:left-0"
+          className="absolute top-[calc(100%+8px)] left-0 z-40 w-[min(100vw-2rem,340px)] rounded-xl border border-rule bg-sheet p-4 shadow-[0_12px_40px_-12px_rgba(0,56,118,0.35)] lg:left-0"
         >
           <div className="mb-3 flex items-center justify-between">
             <p className="t-title text-[15px] text-jabil">Preferencias</p>
@@ -53,9 +53,13 @@ export function PanelOpciones({ className }: { className?: string }) {
               <X className="size-4" />
             </button>
           </div>
-          <ul className="space-y-3 text-[13px]">
+          <p className="mb-3 text-[12px] leading-snug text-graphite">
+            Solo cambian cómo se ve y se usa la interfaz en este equipo. No modifican el cálculo REBA ni la bitácora.
+          </p>
+          <ul className="space-y-3.5 text-[13px]">
             <Fila
               etiqueta="Densidad"
+              ayuda="Cómoda: letras y botones más grandes, con más aire. Compacta: se nota al instante — texto más chico, menos márgenes y botones más bajos."
               control={
                 <select
                   className="campo py-1.5 text-[13px]"
@@ -69,6 +73,7 @@ export function PanelOpciones({ className }: { className?: string }) {
             />
             <Fila
               etiqueta="Foto inicial del caso"
+              ayuda={'Al abrir un caso: «Con ángulos» muestra la foto con esqueleto y grados dibujados; «Original» muestra la foto limpia sin anotaciones.'}
               control={
                 <select
                   className="campo py-1.5 text-[13px]"
@@ -82,11 +87,13 @@ export function PanelOpciones({ className }: { className?: string }) {
             />
             <Toggle
               etiqueta="Confirmar al aprobar o rechazar"
+              ayuda="Si está activo, pide confirmación antes de aprobar/rechazar una recomendación o de firmar el informe."
               checked={preferencias.confirmarAcciones}
               onChange={(v) => setPreferencias({ confirmarAcciones: v })}
             />
             <Toggle
               etiqueta="Mostrar ayudas del visor"
+              ayuda="Muestra el botón «?» sobre la foto con atajos (rueda, +/−, arrastrar). No quita ni pone los ángulos dibujados."
               checked={preferencias.mostrarAyudas}
               onChange={(v) => setPreferencias({ mostrarAyudas: v })}
             />
@@ -100,21 +107,35 @@ export function PanelOpciones({ className }: { className?: string }) {
   )
 }
 
-function Fila({ etiqueta, control }: { etiqueta: string; control: React.ReactNode }) {
+function Fila({ etiqueta, ayuda, control }: { etiqueta: string; ayuda: string; control: ReactNode }) {
   return (
-    <li className="grid gap-1.5">
+    <li className="grid gap-1">
       <span className="font-medium text-ink-soft">{etiqueta}</span>
       {control}
+      <p className="text-[11px] leading-snug text-graphite">{ayuda}</p>
     </li>
   )
 }
 
-function Toggle({ etiqueta, checked, onChange }: { etiqueta: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  etiqueta,
+  ayuda,
+  checked,
+  onChange,
+}: {
+  etiqueta: string
+  ayuda: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
   const id = useId()
   return (
-    <li className="flex items-center justify-between gap-3">
-      <label htmlFor={id} className="font-medium text-ink-soft">{etiqueta}</label>
-      <input id={id} type="checkbox" className="size-4 accent-[var(--jabil)]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <li className="grid gap-1">
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor={id} className="font-medium text-ink-soft">{etiqueta}</label>
+        <input id={id} type="checkbox" className="size-4 accent-[var(--jabil)]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      </div>
+      <p className="text-[11px] leading-snug text-graphite">{ayuda}</p>
     </li>
   )
 }

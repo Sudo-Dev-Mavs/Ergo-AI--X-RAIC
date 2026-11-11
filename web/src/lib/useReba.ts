@@ -23,11 +23,11 @@ export interface BandaReba {
 
 /** Los 5 niveles exactos de la regla de negocio del hackathon. */
 export const BANDAS_REBA: readonly BandaReba[] = [
-  { nivel: "Inapreciable", desde: 1, hasta: 1, color: "var(--riesgo-inapreciable)", colorTailwind: "bg-emerald-800", accion: "No necesaria", urgencia: "ninguna" },
-  { nivel: "Bajo", desde: 2, hasta: 3, color: "var(--riesgo-bajo)", colorTailwind: "bg-emerald-500", accion: "Puede ser necesaria", urgencia: "posible" },
-  { nivel: "Medio", desde: 4, hasta: 7, color: "var(--riesgo-medio)", colorTailwind: "bg-amber-400", accion: "Necesaria actuación", urgencia: "necesaria" },
-  { nivel: "Alto", desde: 8, hasta: 10, color: "var(--riesgo-alto)", colorTailwind: "bg-orange-500", accion: "Necesaria actuación pronto", urgencia: "pronto" },
-  { nivel: "Muy alto", desde: 11, hasta: 15, color: "var(--riesgo-muy-alto)", colorTailwind: "bg-red-600", accion: "Necesaria actuación inmediata", urgencia: "inmediata" },
+  { nivel: "Inapreciable", desde: 1, hasta: 1, color: "var(--riesgo-inapreciable)", colorTailwind: "bg-emerald-800", accion: "Sin cambios requeridos en el puesto", urgencia: "ninguna" },
+  { nivel: "Bajo", desde: 2, hasta: 3, color: "var(--riesgo-bajo)", colorTailwind: "bg-emerald-500", accion: "Puede requerir ajustes menores", urgencia: "posible" },
+  { nivel: "Medio", desde: 4, hasta: 7, color: "var(--riesgo-medio)", colorTailwind: "bg-amber-400", accion: "Requiere cambios en el puesto", urgencia: "necesaria" },
+  { nivel: "Alto", desde: 8, hasta: 10, color: "var(--riesgo-alto)", colorTailwind: "bg-orange-500", accion: "Requiere cambios pronto en el puesto", urgencia: "pronto" },
+  { nivel: "Muy alto", desde: 11, hasta: 15, color: "var(--riesgo-muy-alto)", colorTailwind: "bg-red-600", accion: "Requiere cambios inmediatos en el puesto", urgencia: "inmediata" },
 ] as const
 
 export const UMBRAL_RIESGO_ALTO = 8

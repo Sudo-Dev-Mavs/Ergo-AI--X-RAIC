@@ -2,11 +2,11 @@ import type { Jerarquia, RangoReba, TipoTarea } from "./api"
 
 /** Zonas REBA (Hignett y McAtamney, 2000). Semáforo alineado a la regla de negocio Jabil. */
 export const ZONAS = [
-  { nivel: "Inapreciable", desde: 1, hasta: 1, color: "var(--riesgo-inapreciable)", accion: "No necesaria" },
-  { nivel: "Bajo", desde: 2, hasta: 3, color: "var(--riesgo-bajo)", accion: "Puede ser necesaria" },
-  { nivel: "Medio", desde: 4, hasta: 7, color: "var(--riesgo-medio)", accion: "Necesaria actuación" },
-  { nivel: "Alto", desde: 8, hasta: 10, color: "var(--riesgo-alto)", accion: "Necesaria actuación pronto" },
-  { nivel: "Muy alto", desde: 11, hasta: 15, color: "var(--riesgo-muy-alto)", accion: "Necesaria actuación inmediata" },
+  { nivel: "Inapreciable", desde: 1, hasta: 1, color: "var(--riesgo-inapreciable)", accion: "Sin cambios requeridos en el puesto" },
+  { nivel: "Bajo", desde: 2, hasta: 3, color: "var(--riesgo-bajo)", accion: "Puede requerir ajustes menores" },
+  { nivel: "Medio", desde: 4, hasta: 7, color: "var(--riesgo-medio)", accion: "Requiere cambios en el puesto" },
+  { nivel: "Alto", desde: 8, hasta: 10, color: "var(--riesgo-alto)", accion: "Requiere cambios pronto en el puesto" },
+  { nivel: "Muy alto", desde: 11, hasta: 15, color: "var(--riesgo-muy-alto)", accion: "Requiere cambios inmediatos en el puesto" },
 ] as const
 
 export function colorRiesgo(nivel: string | null | undefined): string {
