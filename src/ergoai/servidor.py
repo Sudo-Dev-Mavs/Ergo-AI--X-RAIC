@@ -41,6 +41,14 @@ from .pose import PoseBackend
 from .pose_aislada import DetectorAislado
 from .proponer_contexto import clasificar_y_asignar, proponer_desde_vistas
 from .privacidad import personas_desde_dict
+from .validacion_entrada import (
+    persona_requerida_en_vista,
+    validar_calidad_imagen,
+    validar_carga_kg,
+    validar_contexto_parcial,
+    validar_overrides,
+    validar_persona_en_pose,
+)
 
 PATRON_CASO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ARCHIVOS_SALIDA = re.compile(r"^((frente|costado|aerea)_(angulos|pose)\.png|informe\.html|acciones_00014\.csv)$")
@@ -188,6 +196,45 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
     def salud() -> dict[str, Any]:
         return {"ok": True, "version": __version__}
 
+    @app.post("/api/validar-foto")
+    def validar_foto_endpoint(
+        foto: UploadFile = File(...),
+        vista: str = Form("costado"),
+    ) -> dict[str, Any]:
+        """Comprueba formato y calidad; persona obligatoria salvo en aérea (MediaPipe falla cenital)."""
+
+        vista_norm = (vista or "costado").strip().lower()
+        if vista_norm not in VISTAS:
+            vista_norm = "costado"
+        etiqueta = f"La foto {vista_norm}"
+        contenido = foto.file.read(MAX_FOTO_BYTES + 1)
+        try:
+            validar_foto(contenido, etiqueta, MAX_FOTO_BYTES)
+            pixeles = privacidad.decodificar(contenido)
+            validar_calidad_imagen(pixeles, etiqueta)
+            with candado:
+                detector = detector_pose()
+                personas = detector.detect(pixeles)
+            validar_persona_en_pose(
+                personas, etiqueta, requerida=persona_requerida_en_vista(vista_norm),
+            )
+        except ValueError as exc:
+            return {"ok": False, "motivo": str(exc)}
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        advertencia = None
+        if vista_norm == "aerea" and not personas:
+            advertencia = (
+                "En aérea no se detectó pose (normal desde arriba). "
+                "Se acepta igual; costado/frente siguen midiendo REBA."
+            )
+        return {
+            "ok": True,
+            "motivo": None,
+            "personas": len(personas),
+            "advertencia": advertencia,
+        }
+
     @app.get("/api/casos")
     def listar_casos() -> list[dict[str, Any]]:
         filas = []
@@ -254,6 +301,10 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
             raise HTTPException(400, "El contexto debe ser un objeto.")
         caso_id = validar_id(str(datos.get("caso_id", "")).strip())
         datos["caso_id"] = caso_id
+        try:
+            datos = validar_contexto_parcial(datos)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         fotos = {nombre: archivo for nombre, archivo in (("frente", frente), ("costado", costado), ("aerea", aerea)) if archivo is not None and archivo.filename}
         desde_toma: dict[str, Path] = {}
         if toma:
@@ -279,9 +330,16 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
             for vista, archivo in fotos.items():
                 contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
                 detector = detector_pose()
+                etiqueta = f"La foto {vista}"
                 try:
-                    validar_foto(contenido, f"La foto {vista}", MAX_FOTO_BYTES)
-                    protegidas[vista] = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                    validar_foto(contenido, etiqueta, MAX_FOTO_BYTES)
+                    pixeles = privacidad.decodificar(contenido)
+                    validar_calidad_imagen(pixeles, etiqueta)
+                    protegida = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                    validar_persona_en_pose(
+                        protegida.personas, etiqueta, requerida=persona_requerida_en_vista(vista),
+                    )
+                    protegidas[vista] = protegida
                 except ValueError as exc:
                     raise HTTPException(400, str(exc)) from exc
                 except RuntimeError as exc:  # sin detector no se puede difuminar: no se guarda nada
@@ -347,9 +405,9 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         parcial: dict[str, Any] = {}
         if carga_kg is not None and str(carga_kg).strip() != "":
             try:
-                parcial["carga_kg"] = float(str(carga_kg).replace(",", "."))
+                parcial["carga_kg"] = validar_carga_kg(carga_kg)
             except ValueError as exc:
-                raise HTTPException(400, "carga_kg debe ser un número.") from exc
+                raise HTTPException(400, str(exc)) from exc
 
         configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
         vistas: dict[str, VistaPose] = {}
@@ -357,9 +415,15 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
             detector = detector_pose()
             for vista, archivo in fotos.items():
                 contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
+                etiqueta = f"La foto {vista}"
                 try:
-                    validar_foto(contenido, f"La foto {vista}", MAX_FOTO_BYTES)
+                    validar_foto(contenido, etiqueta, MAX_FOTO_BYTES)
+                    pixeles = privacidad.decodificar(contenido)
+                    validar_calidad_imagen(pixeles, etiqueta)
                     protegida = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                    validar_persona_en_pose(
+                        protegida.personas, etiqueta, requerida=persona_requerida_en_vista(vista),
+                    )
                 except ValueError as exc:
                     raise HTTPException(400, str(exc)) from exc
                 except RuntimeError as exc:
@@ -505,6 +569,10 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         desconocidas = sorted(set(solicitud.overrides) - validas)
         if desconocidas:
             raise HTTPException(400, f"Medidas desconocidas: {', '.join(desconocidas)}")
+        try:
+            validar_overrides(solicitud.overrides)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         with candado:
             contexto = json.loads(ruta_contexto.read_text(encoding="utf-8"))
             overrides = dict(contexto.get("overrides") or {})
@@ -573,9 +641,15 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
         poses: dict[str, dict[str, Any]] = {}
         detector = detector_pose()
         for vista, contenido in imagenes.items():
+            etiqueta = f"La captura {vista}"
             try:
                 capturas.validar_imagen(contenido, vista)
+                pixeles = privacidad.decodificar(contenido)
+                validar_calidad_imagen(pixeles, etiqueta)
                 protegida = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                validar_persona_en_pose(
+                    protegida.personas, etiqueta, requerida=persona_requerida_en_vista(vista),
+                )
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
             except RuntimeError as exc:  # sin detector no se puede difuminar: no se guarda nada

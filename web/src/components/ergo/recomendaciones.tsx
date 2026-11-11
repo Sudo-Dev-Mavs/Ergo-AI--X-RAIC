@@ -92,13 +92,15 @@ export function PanelRecomendaciones({ estado, accion, ocupado, ocultarAprobarIn
         </div>
       )}
 
-      {JERARQUIAS.map(({ valor, etiqueta, explicacion }, indice) => {
+      {JERARQUIAS.map(({ valor, etiqueta, explicacion }) => {
         const grupo = recs.filter((rec) => rec.jerarquia === valor)
         if (!grupo.length) return null
         return (
           <section key={valor} className="rounded-xl border border-rule-soft bg-slate-50 p-3 sm:p-4">
             <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-rule pb-2">
-              <span className="t-num text-[20px] text-graphite">{indice + 1}</span>
+              <span className="t-num text-[20px] text-graphite" title={`${grupo.length} en este grupo`}>
+                {grupo.length}
+              </span>
               <h3 className="t-title text-[17px] text-jabil sm:text-[18px]">{etiqueta}</h3>
               <p className="hidden text-[13px] text-graphite md:block">{explicacion}</p>
             </div>
