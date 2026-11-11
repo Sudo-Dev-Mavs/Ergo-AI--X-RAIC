@@ -32,12 +32,15 @@ from pydantic import BaseModel, Field
 from . import __version__
 from . import capturas, privacidad
 from . import validacion as val
-from .cli import EXTENSIONES_IMAGEN, VISTAS, ejecutar_evaluar, ejecutar_validacion
+from .cli import EXTENSIONES_IMAGEN, VISTAS, elegir_persona, ejecutar_evaluar, ejecutar_validacion
 from .config import cargar_configuracion
 from .informe import cargar_estado, generar_informe
-from .io_imagenes import validar_foto
+from .io_imagenes import cargar_imagen, validar_foto
+from .modelos import VistaPose
 from .pose import PoseBackend
 from .pose_aislada import DetectorAislado
+from .proponer_contexto import proponer_desde_vistas
+from .privacidad import personas_desde_dict
 
 PATRON_CASO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ARCHIVOS_SALIDA = re.compile(r"^((frente|costado|aerea)_(angulos|pose)\.png|informe\.html|acciones_00014\.csv)$")
@@ -297,6 +300,79 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
             except RuntimeError as exc:  # el detector aislado se cerró: el servidor sigue disponible
                 raise HTTPException(503, str(exc)) from exc
         return estado(caso_id)
+
+    @app.post("/api/proponer-contexto")
+    def proponer_contexto(
+        carga_kg: str | None = Form(None),
+        frente: UploadFile | None = File(None), costado: UploadFile | None = File(None), aerea: UploadFile | None = File(None),
+        borrador: str | None = Form(None), toma: str | None = Form(None), vistas_toma: str | None = Form(None),
+    ) -> dict[str, Any]:
+        """Sugiere postura y ajustes REBA a partir de las fotos (sin crear el caso). Editable."""
+
+        fotos = {nombre: archivo for nombre, archivo in (("frente", frente), ("costado", costado), ("aerea", aerea)) if archivo is not None and archivo.filename}
+        desde_toma: dict[str, Path] = {}
+        if toma:
+            if not borrador:
+                raise HTTPException(400, "Falta el borrador de la toma.")
+            validar_id(borrador)
+            permitidas = set(vistas_toma.split(",")) if vistas_toma else set(VISTAS)
+            desde_toma = {vista: ruta for vista in VISTAS
+                          if vista in permitidas and vista not in fotos and (ruta := capturas.archivo_vista(raiz, borrador, toma, vista))}
+        if not fotos and not desde_toma:
+            raise HTTPException(400, "Agrega al menos una fotografía para proponer el contexto.")
+
+        parcial: dict[str, Any] = {}
+        if carga_kg is not None and str(carga_kg).strip() != "":
+            try:
+                parcial["carga_kg"] = float(str(carga_kg).replace(",", "."))
+            except ValueError as exc:
+                raise HTTPException(400, "carga_kg debe ser un número.") from exc
+
+        configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
+        vistas: dict[str, VistaPose] = {}
+        with candado:
+            detector = detector_pose()
+            for vista, archivo in fotos.items():
+                contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
+                try:
+                    validar_foto(contenido, f"La foto {vista}", MAX_FOTO_BYTES)
+                    protegida = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+                except RuntimeError as exc:
+                    raise HTTPException(503, str(exc)) from exc
+                indice, persona = elegir_persona(protegida.personas, configuracion.pose.vis_min, None)
+                if persona is None:
+                    vistas[vista] = VistaPose(vista, protegida.ancho, protegida.alto, False, len(protegida.personas), motivo="sin detección de pose")
+                else:
+                    vistas[vista] = VistaPose(
+                        vista, protegida.ancho, protegida.alto, True, len(protegida.personas),
+                        persona_indice=indice, landmarks=persona.landmarks, world_landmarks=persona.world_landmarks,
+                    )
+            for vista, ruta in desde_toma.items():
+                imagen = cargar_imagen(ruta)
+                personas = None
+                pose = capturas.archivo_pose(raiz, str(borrador), str(toma), vista)
+                if pose is not None:
+                    try:
+                        datos = json.loads(pose.read_text(encoding="utf-8"))
+                        personas = personas_desde_dict(datos.get("personas", []))
+                    except (OSError, ValueError, KeyError, TypeError):
+                        personas = None
+                if personas is None:
+                    try:
+                        personas = detector.detect(imagen.pixeles)
+                    except RuntimeError as exc:
+                        raise HTTPException(503, str(exc)) from exc
+                indice, persona = elegir_persona(personas, configuracion.pose.vis_min, None)
+                if persona is None:
+                    vistas[vista] = VistaPose(vista, imagen.ancho, imagen.alto, False, len(personas), motivo="sin detección de pose")
+                else:
+                    vistas[vista] = VistaPose(
+                        vista, imagen.ancho, imagen.alto, True, len(personas),
+                        persona_indice=indice, landmarks=persona.landmarks, world_landmarks=persona.world_landmarks,
+                    )
+            return proponer_desde_vistas(vistas, configuracion, parcial)
 
     @app.post("/api/casos/{caso_id}/correcciones")
     def corregir_angulos(caso_id: str, solicitud: SolicitudCorreccion) -> dict[str, Any]:
