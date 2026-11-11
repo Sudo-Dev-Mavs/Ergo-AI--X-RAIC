@@ -198,7 +198,15 @@ export function NuevaPage() {
 
   const cargaNum = Number(carga.replace(",", "."))
   const idValido = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(casoId)
-  const cargaValida = Number.isFinite(cargaNum) && cargaNum >= 0
+  const CARGA_KG_MAX = 100
+  const cargaValida = Number.isFinite(cargaNum) && cargaNum >= 0 && cargaNum <= CARGA_KG_MAX
+  const motivoCarga = !Number.isFinite(cargaNum)
+    ? "La carga debe ser un número en kg."
+    : cargaNum < 0
+      ? "La carga no puede ser negativa."
+      : cargaNum > CARGA_KG_MAX
+        ? `Máximo ${CARGA_KG_MAX} kg (manejo manual creíble). Si es asistida, declara lo que sostiene la persona.`
+        : null
   const activos = Object.values(ajustes).filter(Boolean).length + Object.values(lados).flatMap((l) => Object.values(l)).filter(Boolean).length
   const pasos = [
     { titulo: TITULOS[0], listo: vistasListas.length > 0, resumen: vistasListas.length ? `${vistasListas.length} de 3 vistas listas` : "Falta al menos una vista" },
@@ -401,6 +409,32 @@ export function NuevaPage() {
     sale: (d: number) => ({ x: reducir ? 0 : -48 * d, opacity: 0 }),
   }
 
+  async function aceptarFoto(archivo: File, vista: Vista): Promise<boolean> {
+    try {
+      const resp = await api.validarFoto(archivo, vista)
+      if (!resp.ok) {
+        avisar({
+          titulo: "Foto rechazada",
+          detalle: resp.motivo ?? "No sirve para medir postura.",
+          tipo: "error",
+        })
+        return false
+      }
+      setFotos((prev) => ({ ...prev, [vista]: archivo }))
+      if (resp.advertencia) {
+        avisar({ titulo: "Foto aérea aceptada", detalle: resp.advertencia })
+      }
+      return true
+    } catch (e) {
+      avisar({
+        titulo: "No se pudo validar la foto",
+        detalle: e instanceof Error ? e.message : String(e),
+        tipo: "error",
+      })
+      return false
+    }
+  }
+
   function repartirArchivos(lista: FileList | File[]) {
     const imagenes = filtrarImagenesErgo(lista).slice(0, 3)
     if (!imagenes.length) {
@@ -410,19 +444,22 @@ export function NuevaPage() {
       return
     }
     const orden: Vista[] = ["costado", "frente", "aerea"]
-    setFotos((prev) => {
-      const siguiente = { ...prev }
-      const libres = orden.filter((v) => fuentes[v].modo === "archivo" && !siguiente[v])
+    void (async () => {
+      const libres = orden.filter((v) => fuentes[v].modo === "archivo" && !fotos[v])
       const destinos = libres.length ? libres : orden.filter((v) => fuentes[v].modo === "archivo")
-      imagenes.forEach((archivo, i) => {
+      let ok = 0
+      for (let i = 0; i < imagenes.length; i++) {
+        const archivo = imagenes[i]!
         const nombre = archivo.name.toLowerCase()
         const porNombre = orden.find((v) => nombre.includes(v) || (v === "aerea" && (nombre.includes("aerea") || nombre.includes("aérea") || nombre.includes("top"))))
         const vista = porNombre && fuentes[porNombre].modo === "archivo" ? porNombre : destinos[i]
-        if (vista) siguiente[vista] = archivo
-      })
-      return siguiente
-    })
-    avisar({ titulo: imagenes.length === 1 ? "Foto cargada" : `${imagenes.length} fotos cargadas`, detalle: "Se asignaron a costado, frente o aérea." })
+        if (!vista) continue
+        if (await aceptarFoto(archivo, vista)) ok += 1
+      }
+      if (ok > 0) {
+        avisar({ titulo: ok === 1 ? "Foto aceptada" : `${ok} fotos aceptadas`, detalle: "Pasaron el filtro de calidad y persona." })
+      }
+    })()
   }
 
   // Ctrl+V en el paso de fotos: pega en el primer hueco libre (si el foco no está en una ranura).
@@ -435,7 +472,7 @@ export function NuevaPage() {
       const hayImagen = [...(e.clipboardData?.items ?? [])].some((i) => i.kind === "file" && i.type.startsWith("image/"))
       if (!hayImagen) return
       e.preventDefault()
-      void imagenDesdeClipboard(e.clipboardData).then((img) => {
+      void imagenDesdeClipboard(e.clipboardData).then(async (img) => {
         if (!img) return
         const orden: Vista[] = ["costado", "frente", "aerea"]
         const libre = orden.find((v) => fuentes[v].modo === "archivo" && !fotos[v]) ?? orden.find((v) => fuentes[v].modo === "archivo")
@@ -443,8 +480,9 @@ export function NuevaPage() {
           avisar({ titulo: "No hay ranura libre", detalle: "Cambia una vista a Archivo o quita una foto.", tipo: "error" })
           return
         }
-        setFotos((prev) => ({ ...prev, [libre]: img }))
-        avisar({ titulo: "Foto pegada", detalle: `Se asignó a ${libre}.` })
+        if (await aceptarFoto(img, libre)) {
+          avisar({ titulo: "Foto pegada", detalle: `Se asignó a ${libre}.` })
+        }
       })
     }
     window.addEventListener("paste", onPaste)
@@ -496,7 +534,18 @@ export function NuevaPage() {
                   {VISTAS.map(({ vista, titulo, ayuda }) => (
                     <VistaFuente key={vista} vista={vista} titulo={titulo} ayuda={ayuda} principal={vista === "costado"}
                       fuente={fuentes[vista]} onFuente={(f) => setFuentes((prev) => ({ ...prev, [vista]: f }))}
-                      archivo={fotos[vista]} onArchivo={(a) => setFotos((prev) => ({ ...prev, [vista]: a }))}
+                      archivo={fotos[vista]}
+                      onArchivo={async (a) => {
+                        if (!a) {
+                          setFotos((prev) => ({ ...prev, [vista]: null }))
+                          return
+                        }
+                        const ok = await aceptarFoto(a, vista)
+                        if (ok && vista !== "aerea") {
+                          avisar({ titulo: "Foto aceptada", detalle: `Vista ${vista}: hay persona y calidad suficiente.` })
+                        }
+                        return ok
+                      }}
                       camaras={camaras.camaras} abrir={camaras.abrir}
                       capturaElegida={origen(vista) === "captura" && tomaElegida ? hora(tomaElegida.fecha) : null} />
                   ))}
@@ -549,13 +598,14 @@ export function NuevaPage() {
                   <Campo etiqueta="Carga (kg)" className="w-[120px]">
                     <input className="campo t-num text-[17px]" inputMode="decimal" value={carga} onChange={(e) => setCarga(e.target.value)} placeholder="0" aria-invalid={!cargaValida} />
                     {carga === "0" || carga === "" ? <p className="mt-1 text-[12px] text-graphite">0 kg (sin carga)</p> : null}
+                    {motivoCarga && <p className="mt-1 text-[13px] font-medium text-amber-950">{motivoCarga}</p>}
                   </Campo>
                   <Campo etiqueta="Agarre de la carga">
                     <HaloSegmented className="overflow-x-auto" translucent={false} value={agarre} onValueChange={setAgarre}
                       items={["bueno", "regular", "malo", "inaceptable"].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))} />
                   </Campo>
                 </div>
-                {cargaNum > 14 && <p className="text-[14px] text-ink-soft">Más de 14 kg: supera el límite por persona de Jabil y se propondrá asistencia mecánica.</p>}
+                {cargaValida && cargaNum > 14 && <p className="text-[14px] text-ink-soft">Más de 14 kg: supera el límite por persona de Jabil y se propondrá asistencia mecánica.</p>}
                 <div className="flex flex-wrap gap-x-6 gap-y-4">
                   <Campo etiqueta="Postura">
                     <HaloSegmented className="overflow-x-auto" translucent={false} value={postura} onValueChange={setPostura}

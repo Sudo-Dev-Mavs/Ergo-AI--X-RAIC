@@ -274,6 +274,16 @@ export const api = {
       json({ usuario, confirmacion }),
     ),
   crear: (formulario: FormData) => pedirCaso("/api/casos", { method: "POST", body: formulario }),
+  /** Rechaza fotos negras/borrosas; sin persona solo en costado/frente (aérea es laxa). */
+  validarFoto: (archivo: File, vista: Vista = "costado") => {
+    const formulario = new FormData()
+    formulario.set("foto", archivo, archivo.name || "foto.jpg")
+    formulario.set("vista", vista)
+    return pedir<{ ok: boolean; motivo: string | null; personas?: number; advertencia?: string | null }>(
+      "/api/validar-foto",
+      { method: "POST", body: formulario },
+    )
+  },
   /** Sugiere postura/ajustes REBA desde las fotos (sin crear el caso). */
   proponerContexto: (formulario: FormData) =>
     pedir<{

@@ -87,9 +87,20 @@ export function PanelPostura({ estado, ocupado, onCorregir }: {
   }, [estado.resultado.angulos])
 
   const cambios: Record<string, number | null> = {}
+  const erroresAngulo: string[] = []
   for (const [clave, texto] of Object.entries(borrador)) {
     const valor = parseAngulo(texto)
-    if (valor != null) cambios[clave] = valor
+    if (valor == null) continue
+    const esBinario = clave.startsWith("apoyo_piernas_unilateral")
+    if (esBinario && valor !== 0 && valor !== 1) {
+      erroresAngulo.push(`${clave}: solo 0 (No) o 1 (Sí).`)
+      continue
+    }
+    if (!esBinario && (valor < -5 || valor > 185)) {
+      erroresAngulo.push(`${NOMBRE_MEDIDA[clave.replace(/_[LR]$/, "")] ?? clave}: ${valor}° fuera de rango (−5° a 185°).`)
+      continue
+    }
+    cambios[clave] = valor
   }
   for (const clave of quitar) cambios[clave] = null
   const total = Object.keys(cambios).length
@@ -216,7 +227,12 @@ export function PanelPostura({ estado, ocupado, onCorregir }: {
           <label className="mt-3 block text-[13px] text-graphite">Motivo (opcional)
             <input className="campo mt-1 text-[14px]" value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Ej. medido con goniómetro" />
           </label>
-          <button className="boton-tinta mt-3 w-full justify-center" disabled={!total || ocupado}
+          {erroresAngulo.length > 0 && (
+            <ul className="mt-2 space-y-1 text-[12px] font-medium text-amber-950">
+              {erroresAngulo.map((e) => <li key={e}>· {e}</li>)}
+            </ul>
+          )}
+          <button className="boton-tinta mt-3 w-full justify-center" disabled={!total || ocupado || erroresAngulo.length > 0}
             onClick={async () => { if (await onCorregir(cambios, comentario)) { setBorrador({}); setQuitar(new Set()); setComentario("") } }}>
             {total ? `Recalcular con ${total} ${total === 1 ? "corrección" : "correcciones"}` : "Sin correcciones"}
           </button>

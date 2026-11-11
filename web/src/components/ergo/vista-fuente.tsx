@@ -18,7 +18,8 @@ export function VistaFuente({ vista, titulo, ayuda, principal, fuente, onFuente,
   fuente: Fuente
   onFuente: (fuente: Fuente) => void
   archivo: File | null
-  onArchivo: (archivo: File | null) => void
+  /** Devuelve false si el padre rechazó la foto (calidad / sin persona). */
+  onArchivo: (archivo: File | null) => void | Promise<boolean | void>
   camaras: Camara[]
   abrir: (deviceId: string) => Promise<MediaStream>
   capturaElegida: string | null
@@ -134,7 +135,7 @@ function EnVivo({ deviceId, abrir, vista }: { deviceId: string; abrir: (id: stri
 function RanuraArchivo({ titulo, archivo, onArchivo, principal }: {
   titulo: string
   archivo: File | null
-  onArchivo: (archivo: File | null) => void
+  onArchivo: (archivo: File | null) => void | Promise<boolean | void>
   principal?: boolean
 }) {
   const id = useId()
@@ -143,6 +144,7 @@ function RanuraArchivo({ titulo, archivo, onArchivo, principal }: {
   const [encima, setEncima] = useState(false)
   const [activa, setActiva] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [validando, setValidando] = useState(false)
 
   useEffect(() => {
     if (!archivo) {
@@ -157,7 +159,7 @@ function RanuraArchivo({ titulo, archivo, onArchivo, principal }: {
   async function aplicarArchivo(bruto: File | null) {
     setAviso(null)
     if (!bruto) {
-      onArchivo(null)
+      void onArchivo(null)
       return
     }
     if (!esImagenErgo(bruto) && !bruto.type.startsWith("image/")) {
@@ -169,7 +171,15 @@ function RanuraArchivo({ titulo, archivo, onArchivo, principal }: {
       setAviso("No se pudo usar esa imagen (usa JPG/PNG)")
       return
     }
-    onArchivo(normal)
+    setValidando(true)
+    try {
+      const ok = await Promise.resolve(onArchivo(normal))
+      if (ok === false) {
+        setAviso("Rechazada: sin persona o calidad insuficiente")
+      }
+    } finally {
+      setValidando(false)
+    }
   }
 
   const soltar = (evento: DragEvent) => {
@@ -220,16 +230,19 @@ function RanuraArchivo({ titulo, archivo, onArchivo, principal }: {
             "transition-[border-color,background,box-shadow]",
             encima && "drop-activo",
             activa && !encima && "ring-2 ring-jabil-cyan ring-offset-1",
+            validando && "pointer-events-none opacity-80",
           )}
         >
-          {vista
-            ? <img src={vista} alt={`Vista ${titulo.toLowerCase()} seleccionada`} className="pointer-events-none h-full w-full object-contain" />
-            : (
-              <Vacio
-                icono={<ImagePlus className="size-10 text-jabil" strokeWidth={1.5} />}
-                texto={encima ? "Suelta la foto aquí" : activa ? "Ctrl+V para pegar" : "Arrastra, elige o Ctrl+V"}
-              />
-            )}
+          {validando
+            ? <Vacio icono={<ImagePlus className="size-10 animate-pulse text-jabil" strokeWidth={1.5} />} texto="Comprobando persona…" />
+            : vista
+              ? <img src={vista} alt={`Vista ${titulo.toLowerCase()} seleccionada`} className="pointer-events-none h-full w-full object-contain" />
+              : (
+                <Vacio
+                  icono={<ImagePlus className="size-10 text-jabil" strokeWidth={1.5} />}
+                  texto={encima ? "Suelta la foto aquí" : activa ? "Ctrl+V para pegar" : "Arrastra, elige o Ctrl+V"}
+                />
+              )}
         </Marco>
         <input
           id={id}
