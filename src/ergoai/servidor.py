@@ -39,7 +39,7 @@ from .io_imagenes import cargar_imagen, validar_foto
 from .modelos import VistaPose
 from .pose import PoseBackend
 from .pose_aislada import DetectorAislado
-from .proponer_contexto import proponer_desde_vistas
+from .proponer_contexto import clasificar_y_asignar, proponer_desde_vistas
 from .privacidad import personas_desde_dict
 
 PATRON_CASO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -98,6 +98,11 @@ class SolicitudCorreccion(BaseModel):
     usuario: str = Field(min_length=1)
     overrides: dict[str, float | None]
     comentario: str = ""
+
+
+class SolicitudEliminarCaso(BaseModel):
+    usuario: str = Field(min_length=1)
+    confirmacion: str = Field(min_length=1, description="Debe coincidir con el caso_id.")
 
 
 def _clave_override(angulo: dict[str, Any]) -> str:
@@ -214,6 +219,24 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
     @app.get("/api/casos/{caso_id}")
     def obtener_caso(caso_id: str) -> dict[str, Any]:
         return estado(caso_id)
+
+    @app.post("/api/casos/{caso_id}/eliminar")
+    def eliminar_caso(caso_id: str, solicitud: SolicitudEliminarCaso) -> dict[str, Any]:
+        """Borra del equipo las carpetas de entrada y salida del caso (fotos, análisis, informe)."""
+
+        caso = validar_id(caso_id)
+        if solicitud.confirmacion.strip() != caso:
+            raise HTTPException(400, f"Para eliminar escribe exactamente el identificador «{caso}».")
+        entrada = carpeta_entrada(caso)
+        salida = raiz / "out" / caso
+        if not entrada.is_dir() and not (salida / "resultado.json").is_file() and not salida.is_dir():
+            raise HTTPException(404, f"No existe el caso «{caso}».")
+        with candado:
+            if salida.is_dir():
+                shutil.rmtree(salida)
+            if entrada.is_dir():
+                shutil.rmtree(entrada)
+        return {"ok": True, "caso_id": caso, "eliminado_por": solicitud.usuario.strip()}
 
     @app.post("/api/casos")
     def crear_caso(
@@ -373,6 +396,100 @@ def crear_app(raiz: Path, backend: PoseBackend | None = None) -> FastAPI:
                         persona_indice=indice, landmarks=persona.landmarks, world_landmarks=persona.world_landmarks,
                     )
             return proponer_desde_vistas(vistas, configuracion, parcial)
+
+    @app.post("/api/clasificar-vistas")
+    def clasificar_vistas_endpoint(
+        frente: UploadFile | None = File(None), costado: UploadFile | None = File(None), aerea: UploadFile | None = File(None),
+        imagen_0: UploadFile | None = File(None), imagen_1: UploadFile | None = File(None), imagen_2: UploadFile | None = File(None),
+        borrador: str | None = Form(None), toma: str | None = Form(None), vistas_toma: str | None = Form(None),
+        aplicar_toma: str | None = Form(None),
+    ) -> dict[str, Any]:
+        """Clasifica fotos/capturas y las coloca en costado / frente / aérea (pose + nombre)."""
+
+        fotos = {
+            clave: archivo
+            for clave, archivo in (
+                ("costado", costado), ("frente", frente), ("aerea", aerea),
+                ("imagen_0", imagen_0), ("imagen_1", imagen_1), ("imagen_2", imagen_2),
+            )
+            if archivo is not None and archivo.filename
+        }
+        desde_toma: dict[str, Path] = {}
+        if toma:
+            if not borrador:
+                raise HTTPException(400, "Falta el borrador de la toma.")
+            validar_id(borrador)
+            permitidas = set(vistas_toma.split(",")) if vistas_toma else set(VISTAS)
+            desde_toma = {
+                vista: ruta for vista in VISTAS
+                if vista in permitidas and vista not in fotos and (ruta := capturas.archivo_vista(raiz, borrador, toma, vista))
+            }
+        if not fotos and not desde_toma:
+            raise HTTPException(400, "Agrega al menos una fotografía o captura para clasificar.")
+
+        configuracion = cargar_configuracion(raiz / "config" / "umbrales.yaml")
+        candidatas: list[tuple[str, VistaPose, str]] = []
+        with candado:
+            detector = detector_pose()
+            for cid, archivo in fotos.items():
+                contenido = archivo.file.read(MAX_FOTO_BYTES + 1)
+                try:
+                    validar_foto(contenido, f"La foto {cid}", MAX_FOTO_BYTES)
+                    protegida = privacidad.proteger(contenido, detector.detect, getattr(detector, "detectar_rostros", None))
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+                except RuntimeError as exc:
+                    raise HTTPException(503, str(exc)) from exc
+                indice, persona = elegir_persona(protegida.personas, configuracion.pose.vis_min, None)
+                if persona is None:
+                    pose = VistaPose(cid, protegida.ancho, protegida.alto, False, len(protegida.personas), motivo="sin detección")
+                else:
+                    pose = VistaPose(
+                        cid, protegida.ancho, protegida.alto, True, len(protegida.personas),
+                        persona_indice=indice, landmarks=persona.landmarks, world_landmarks=persona.world_landmarks,
+                    )
+                candidatas.append((cid, pose, archivo.filename or cid))
+
+            for vista, ruta in desde_toma.items():
+                imagen = cargar_imagen(ruta)
+                personas = None
+                cache = capturas.archivo_pose(raiz, str(borrador), str(toma), vista)
+                if cache is not None:
+                    try:
+                        datos = json.loads(cache.read_text(encoding="utf-8"))
+                        personas = personas_desde_dict(datos.get("personas", []))
+                    except (OSError, ValueError, KeyError, TypeError):
+                        personas = None
+                if personas is None:
+                    try:
+                        personas = detector.detect(imagen.pixeles)
+                    except RuntimeError as exc:
+                        raise HTTPException(503, str(exc)) from exc
+                indice, persona = elegir_persona(personas, configuracion.pose.vis_min, None)
+                if persona is None:
+                    pose = VistaPose(vista, imagen.ancho, imagen.alto, False, len(personas), motivo="sin detección")
+                else:
+                    pose = VistaPose(
+                        vista, imagen.ancho, imagen.alto, True, len(personas),
+                        persona_indice=indice, landmarks=persona.landmarks, world_landmarks=persona.world_landmarks,
+                    )
+                candidatas.append((vista, pose, ruta.name))
+
+            resultado = clasificar_y_asignar(candidatas)
+            if desde_toma and borrador and toma and str(aplicar_toma or "").strip().lower() in {"1", "true", "si", "sí", "yes"}:
+                mapa = {
+                    a["id"]: a["vista"]
+                    for a in resultado.get("asignaciones", [])
+                    if a.get("id") in desde_toma
+                }
+                try:
+                    movidos = capturas.reordenar_vistas_toma(raiz, str(borrador), str(toma), mapa)
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+                if movidos:
+                    resultado["motivos"] = [f"Captura reordenada: {', '.join(movidos)}."] + list(resultado.get("motivos") or [])
+                    resultado["toma_reordenada"] = movidos
+            return resultado
 
     @app.post("/api/casos/{caso_id}/correcciones")
     def corregir_angulos(caso_id: str, solicitud: SolicitudCorreccion) -> dict[str, Any]:

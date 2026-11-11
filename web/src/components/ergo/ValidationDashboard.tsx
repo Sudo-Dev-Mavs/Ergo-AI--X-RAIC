@@ -1,11 +1,12 @@
-import { Check, ChevronLeft, ChevronRight, ClipboardCheck, PanelLeft, Pencil, ShieldAlert } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, ClipboardCheck, PanelLeft, Pencil, ShieldAlert, Trash2 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { ComparadorResidual } from "@/components/ergo/ComparadorResidual"
+import { useDialogo } from "@/components/ergo/DialogoConfirmar"
 import { PanelRecomendaciones, type Accion } from "@/components/ergo/recomendaciones"
 import { VisorFoto } from "@/components/ergo/VisorFoto"
 import { api, type EstadoCaso, type ResumenCaso, type Vista } from "@/lib/api"
-import { useEspecialista } from "@/lib/app"
+import { avisar, ir, useEspecialista } from "@/lib/app"
 import { colorPuntoCaso, etiquetaReba, etiquetaTarea } from "@/lib/dominio"
 import { usePreferencias } from "@/lib/preferencias"
 import { esRiesgoAlto, useReba } from "@/lib/useReba"
@@ -20,12 +21,15 @@ interface Props {
   onAccion: Accion
   onAjustarResidual: (puntaje: number, motivo: string) => Promise<boolean>
   onLimpiarResidual: () => Promise<boolean>
+  onCasoEliminado?: () => void
 }
 
 /** HITL: cola colapsable · evidencia + recomendaciones · panel de decisión. */
 export function ValidationDashboard({
-  casos, casoActivo, cargandoCaso, ocupado, onSeleccionar, onAccion, onAjustarResidual, onLimpiarResidual,
+  casos, casoActivo, cargandoCaso, ocupado, onSeleccionar, onAccion, onAjustarResidual, onLimpiarResidual, onCasoEliminado,
 }: Props) {
+  const { pedirFirma } = useEspecialista()
+  const { pedir } = useDialogo()
   const pendientes = useMemo(
     () => casos
       .filter((c) => c.estado_informe !== "aprobado")
@@ -137,12 +141,49 @@ export function ValidationDashboard({
           )}
           {casoActivo && (
             <>
-              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                <h2 className="t-title text-[26px] text-jabil">{casoActivo.resultado.caso_id}</h2>
-                <p className="text-[14px] text-ink-soft">
-                  {etiquetaTarea(casoActivo.resultado.contexto?.tipo_tarea)}
-                  {casoActivo.resultado.contexto?.carga_kg != null ? ` · ${casoActivo.resultado.contexto.carga_kg} kg` : ""}
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
+                  <h2 className="t-title text-[26px] text-jabil">{casoActivo.resultado.caso_id}</h2>
+                  <p className="text-[14px] text-ink-soft">
+                    {etiquetaTarea(casoActivo.resultado.contexto?.tipo_tarea)}
+                    {casoActivo.resultado.contexto?.carga_kg != null ? ` · ${casoActivo.resultado.contexto.carga_kg} kg` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="boton-linea border-red-300 text-red-800 hover:border-red-400 hover:bg-red-50"
+                  disabled={ocupado}
+                  title="Borrar este caso completo de este equipo"
+                  onClick={() => {
+                    void (async () => {
+                      const id = casoActivo.resultado.caso_id
+                      const usuario = pedirFirma()
+                      if (!usuario) return
+                      const r = await pedir({
+                        titulo: `¿Eliminar el caso «${id}»?`,
+                        detalle: "Se borran fotos, análisis, validación e informe. No se puede deshacer.",
+                        confirmarEtiqueta: "Eliminar caso",
+                        tono: "peligro",
+                        motivo: { etiqueta: `Escribe ${id} para confirmar`, placeholder: id, obligatorio: true },
+                      })
+                      if (!r.ok) return
+                      if (r.motivo !== id) {
+                        avisar({ titulo: "Confirmación incorrecta", detalle: `Debes escribir exactamente «${id}».`, tipo: "error" })
+                        return
+                      }
+                      try {
+                        await api.eliminarCaso(id, usuario, r.motivo)
+                        avisar({ titulo: "Caso eliminado", detalle: `«${id}» ya no está en este equipo.` })
+                        onCasoEliminado?.()
+                        ir({ nombre: "validacion" })
+                      } catch (e) {
+                        avisar({ titulo: "No se eliminó el caso", detalle: e instanceof Error ? e.message : String(e), tipo: "error" })
+                      }
+                    })()
+                  }}
+                >
+                  <Trash2 className="size-4" /> Eliminar caso
+                </button>
               </div>
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
                 <Evidencia estado={casoActivo} />
@@ -224,6 +265,8 @@ function PanelDecision({
   onLimpiarResidual: () => Promise<boolean>
 }) {
   const { nombre } = useEspecialista()
+  const { preferencias } = usePreferencias()
+  const { pedir } = useDialogo()
   const sinFirma = !nombre.trim()
   const inicial = casoActivo.resultado.reba.final.reportado
   const rangoInicial = inicial == null ? casoActivo.resultado.reba.final.rango ?? null : null
@@ -232,6 +275,18 @@ function PanelDecision({
   const angulosOk = (casoActivo.resultado.angulos ?? []).some((a) => a.valor_deg != null)
   const bloqueosCortos = casoActivo.bloqueos.filter((m) => !m.includes("sigue como propuesta")).slice(0, 2)
   const ctaBloqueado = ocupado || aprobado || bloqueado || sinFirma
+
+  async function aprobarInforme() {
+    if (preferencias.confirmarAcciones) {
+      const r = await pedir({
+        titulo: "¿Aprobar acciones de piso?",
+        detalle: "Se firmará el informe en la bitácora. Las recomendaciones aprobadas pasan a acción de piso.",
+        confirmarEtiqueta: "Aprobar informe",
+      })
+      if (!r.ok) return
+    }
+    await onAccion("aprobar_informe")
+  }
 
   return (
     <div className="space-y-3">
@@ -290,7 +345,7 @@ function PanelDecision({
           className="boton-tinta mt-3 w-full justify-center py-3 text-[15px]"
           disabled={ctaBloqueado}
           title={sinFirma ? "Escribe tu nombre para firmar" : bloqueado ? casoActivo.bloqueos.join(" · ") : undefined}
-          onClick={() => void onAccion("aprobar_informe")}
+          onClick={() => void aprobarInforme()}
         >
           <Check className="size-4" />
           {aprobado

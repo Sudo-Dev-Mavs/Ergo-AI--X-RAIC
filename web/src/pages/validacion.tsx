@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react"
 import { ValidationDashboard } from "@/components/ergo/ValidationDashboard"
 import { api, type EstadoCaso } from "@/lib/api"
 import { avisar, ir, useEspecialista } from "@/lib/app"
-import { usePreferencias } from "@/lib/preferencias"
 import { useDatos } from "@/lib/useDatos"
 
 const MENSAJE: Record<string, string> = {
@@ -21,7 +20,6 @@ const MENSAJE: Record<string, string> = {
 export function ValidacionPage({ casoIdInicial }: { casoIdInicial?: string }) {
   const { datos: casos, recargar } = useDatos(api.casos, [])
   const { pedirFirma } = useEspecialista()
-  const { preferencias } = usePreferencias()
   const [activoId, setActivoId] = useState<string | undefined>(casoIdInicial)
   const [estado, setEstado] = useState<EstadoCaso | null>(null)
   const [cargandoCaso, setCargandoCaso] = useState(false)
@@ -54,14 +52,6 @@ export function ValidacionPage({ casoIdInicial }: { casoIdInicial?: string }) {
     if (!activoId) return false
     const usuario = pedirFirma()
     if (!usuario) return false
-    if (preferencias.confirmarAcciones) {
-      const pregunta =
-        nombre === "aprobar_informe" ? "¿Aprobar el informe y generar las acciones de piso?"
-        : nombre === "aprobar" ? "¿Aprobar esta recomendación?"
-        : nombre === "rechazar" ? "¿Rechazar esta recomendación?"
-        : null
-      if (pregunta && !window.confirm(pregunta)) return false
-    }
     setOcupado(true)
     try {
       const nuevo = await api.validar(activoId, { usuario, accion: nombre, rec_id: recId, valores, comentario })
@@ -129,6 +119,11 @@ export function ValidacionPage({ casoIdInicial }: { casoIdInicial?: string }) {
       onAccion={accion}
       onAjustarResidual={ajustarResidual}
       onLimpiarResidual={limpiarResidual}
+      onCasoEliminado={() => {
+        setActivoId(undefined)
+        setEstado(null)
+        void recargar()
+      }}
     />
   )
 }

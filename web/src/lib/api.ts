@@ -267,6 +267,12 @@ async function pedirCaso(url: string, init?: RequestInit): Promise<EstadoCaso> {
 export const api = {
   casos: () => pedir<ResumenCaso[]>("/api/casos"),
   caso: (id: string) => pedirCaso(`/api/casos/${encodeURIComponent(id)}`),
+  /** Borra fotos, análisis e informe del caso en este equipo. */
+  eliminarCaso: (id: string, usuario: string, confirmacion: string) =>
+    pedir<{ ok: boolean; caso_id: string; eliminado_por: string }>(
+      `/api/casos/${encodeURIComponent(id)}/eliminar`,
+      json({ usuario, confirmacion }),
+    ),
   crear: (formulario: FormData) => pedirCaso("/api/casos", { method: "POST", body: formulario }),
   /** Sugiere postura/ajustes REBA desde las fotos (sin crear el caso). */
   proponerContexto: (formulario: FormData) =>
@@ -289,6 +295,14 @@ export const api = {
         muneca_desviada_o_torcida?: { izquierdo?: boolean; derecho?: boolean }
       }
     }>("/api/proponer-contexto", { method: "POST", body: formulario }),
+  /** Clasifica fotos/capturas y dice a qué vista va cada una. */
+  clasificarVistas: (formulario: FormData) =>
+    pedir<{
+      ok: boolean
+      motivos: string[]
+      asignaciones: { id: string; vista: Vista; confianza: number; nombre: string; detectado: boolean }[]
+      toma_reordenada?: string[]
+    }>("/api/clasificar-vistas", { method: "POST", body: formulario }),
   validar: (id: string, cuerpo: { usuario: string; accion: string; rec_id?: string; valores?: Record<string, string>; comentario?: string }) =>
     pedirCaso(`/api/casos/${encodeURIComponent(id)}/validacion`, json(cuerpo)),
   ajustarResidual: (id: string, usuario: string, puntaje: number, comentario: string) =>
@@ -309,6 +323,6 @@ export const api = {
     return pedir<{ toma: Toma; tomas: Toma[] }>(`/api/capturas/${encodeURIComponent(borrador)}`, { method: "POST", body: formulario })
   },
   descartarTomas: (borrador: string) => pedir<ListaTomas>(`/api/capturas/${encodeURIComponent(borrador)}`, { method: "DELETE" }),
-  captura: (borrador: string, toma: string, vista: Vista) =>
-    `/api/capturas/${encodeURIComponent(borrador)}/${encodeURIComponent(toma)}/${vista}`,
+  captura: (borrador: string, toma: string, vista: Vista, bust?: number | string) =>
+    `/api/capturas/${encodeURIComponent(borrador)}/${encodeURIComponent(toma)}/${vista}${bust != null ? `?v=${bust}` : ""}`,
 }

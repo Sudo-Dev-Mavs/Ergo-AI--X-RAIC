@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Camera, RefreshCw, Sparkles } from "lucide-react"
+import { ArrowLeft, ArrowRight, Camera, RefreshCw, Sparkles, Wand2 } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
@@ -11,7 +11,7 @@ import { VistaFuente, type Fuente } from "@/components/ergo/vista-fuente"
 import { ShimmerButton } from "@/components/magicui/shimmer-button"
 import { ErrorApi, api, type TipoTarea, type Toma, type Vista } from "@/lib/api"
 import { avisar, ir, useEspecialista } from "@/lib/app"
-import { conLimite, useCamaras } from "@/lib/camaras"
+import { conLimite, useCamaras, type Camara } from "@/lib/camaras"
 import { TAREAS, etiquetaTarea } from "@/lib/dominio"
 import { filtrarImagenesErgo, imagenDesdeClipboard } from "@/lib/imagenes"
 import { cn } from "@/lib/utils"
@@ -89,6 +89,7 @@ export function NuevaPage() {
     return id
   })
   const [tomas, setTomas] = useState<Toma[]>([])
+  const [capturaBust, setCapturaBust] = useState(0)
   const [limites, setLimites] = useState({ max: 120, horas: 24 })
   const [tomaSel, setTomaSel] = useState<string | null>(null)
   const [seguirUltima, setSeguirUltima] = useState(true)
@@ -113,6 +114,7 @@ export function NuevaPage() {
 
   const [trabajando, setTrabajando] = useState(false)
   const [proponiendo, setProponiendo] = useState(false)
+  const [asignandoVistas, setAsignandoVistas] = useState(false)
   const [propuesta, setPropuesta] = useState<{ motivos: string[]; advertencias: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -205,6 +207,94 @@ export function NuevaPage() {
   ]
   const primerPendiente = !pasos[0].listo ? 0 : !pasos[1].listo ? 1 : null
   const puedeAnalizar = primerPendiente === null && !trabajando
+
+  async function asignarVistasAutomatico() {
+    setAsignandoVistas(true)
+    setError(null)
+    const partes: string[] = []
+    let fotosTrasClasificar = fotos
+    try {
+      const hayArchivo = VISTAS.some(({ vista }) => origen(vista) === "archivo" && fotos[vista])
+      const hayToma = Boolean(vistasCaptura.length && tomaElegida)
+      if (hayArchivo || hayToma) {
+        const formulario = new FormData()
+        for (const { vista } of VISTAS) {
+          if (origen(vista) === "archivo" && fotos[vista]) formulario.set(vista, fotos[vista]!)
+        }
+        if (hayToma && tomaElegida) {
+          formulario.set("borrador", borrador)
+          formulario.set("toma", tomaElegida.id)
+          formulario.set("vistas_toma", vistasCaptura.join(","))
+          formulario.set("aplicar_toma", "1")
+        }
+        const resp = await api.clasificarVistas(formulario)
+        if (resp.ok && resp.asignaciones?.length) {
+          const porId = new Map(resp.asignaciones.map((a) => [a.id, a.vista]))
+          const originales: Partial<Record<Vista, File>> = {}
+          for (const { vista } of VISTAS) {
+            if (origen(vista) === "archivo" && fotos[vista]) originales[vista] = fotos[vista]!
+          }
+          const reordenadas: Record<Vista, File | null> = { costado: null, frente: null, aerea: null }
+          let movioArchivo = false
+          for (const origenVista of Object.keys(originales) as Vista[]) {
+            const dest = porId.get(origenVista)
+            if (!dest || !originales[origenVista]) continue
+            reordenadas[dest] = originales[origenVista]!
+            if (dest !== origenVista) movioArchivo = true
+          }
+          if (Object.values(originales).some(Boolean)) {
+            fotosTrasClasificar = reordenadas
+            if (movioArchivo || Object.values(reordenadas).filter(Boolean).length) {
+              setFotos(reordenadas)
+              setFuentes((prev) => ({
+                costado: reordenadas.costado ? { modo: "archivo" } : prev.costado,
+                frente: reordenadas.frente ? { modo: "archivo" } : prev.frente,
+                aerea: reordenadas.aerea ? { modo: "archivo" } : prev.aerea,
+              }))
+            }
+          }
+          if (resp.toma_reordenada?.length) {
+            setCapturaBust(Date.now())
+            try {
+              const r = await api.tomas(borrador)
+              setTomas(r.tomas)
+            } catch { /* la asignación ya quedó en disco */ }
+          }
+          partes.push(resp.motivos?.slice(0, 3).join(" · ") || "Fotos/capturas colocadas por pose y nombre.")
+        }
+      }
+
+      let lista = camaras.camaras
+      if (!lista.length || camaras.permiso !== "concedido") {
+        await camaras.detectar()
+        lista = await camaras.listar()
+      }
+      if (lista.length) {
+        const { fuentes: asignadas, detalle } = asignarCamarasAVistas(lista)
+        setFuentes((prev) => ({
+          costado: prev.costado.modo === "archivo" && fotosTrasClasificar.costado ? prev.costado : asignadas.costado,
+          frente: prev.frente.modo === "archivo" && fotosTrasClasificar.frente ? prev.frente : asignadas.frente,
+          aerea: prev.aerea.modo === "archivo" && fotosTrasClasificar.aerea ? prev.aerea : asignadas.aerea,
+        }))
+        partes.push(detalle)
+      }
+
+      if (!partes.length) {
+        avisar({
+          titulo: "Nada que asignar",
+          detalle: "Sube fotos, elige una toma capturada o conecta cámaras.",
+          tipo: "error",
+        })
+        return
+      }
+      avisar({ titulo: "Vistas asignadas", detalle: partes.join(" ") })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      avisar({ titulo: "No se asignaron las vistas", detalle: e instanceof Error ? e.message : String(e), tipo: "error" })
+    } finally {
+      setAsignandoVistas(false)
+    }
+  }
 
   async function proponerDesdeFotos() {
     if (!vistasListas.length) {
@@ -393,9 +483,14 @@ export function NuevaPage() {
                   repartirArchivos(e.dataTransfer.files)
                 }}
               >
-                <EstadoCamaras {...camaras} />
+                <EstadoCamaras
+                  {...camaras}
+                  asignando={asignandoVistas}
+                  onAsignarAuto={() => void asignarVistasAutomatico()}
+                />
                 <p className="text-[13px] text-ink-soft">
-                  <span className="font-semibold text-jabil">Costado</span> es la vista principal. Suelta la foto en su recuadro, o pega con <kbd className="rounded border border-rule bg-sheet px-1 font-medium text-jabil">Ctrl+V</kbd>. Varias a la vez se asignan por nombre (costado/frente/aérea).
+                  <span className="font-semibold text-jabil">Costado</span> es la vista principal. Suelta la foto en su recuadro, o pega con <kbd className="rounded border border-rule bg-sheet px-1 font-medium text-jabil">Ctrl+V</kbd>.
+                  {" "}<span className="font-medium text-jabil">Asignar vistas</span> coloca fotos/capturas en costado·frente·aérea (pose + nombre) y enlaza cámaras si hay.
                 </p>
                 <div className="grid gap-6 md:grid-cols-3 md:grid-rows-[auto_auto_auto_auto] md:gap-x-4 md:gap-y-2">
                   {VISTAS.map(({ vista, titulo, ayuda }) => (
@@ -413,7 +508,7 @@ export function NuevaPage() {
                     auto={auto} onAuto={(activo) => { setAuto(activo); if (activo) void tomar() }}
                     intervaloS={intervaloS} onIntervalo={setIntervaloS} onCapturarAhora={() => void tomar()}
                     proximaEn={proximaEn} capturando={capturando} error={errorCaptura} maxTomas={limites.max} retencionHoras={limites.horas}
-                    camarasAsignadas={vistasCamara.length}
+                    camarasAsignadas={vistasCamara.length} capturaBust={capturaBust}
                     onDescartar={async () => {
                       if (!window.confirm("¿Descartar todas las tomas de esta evaluación? Se borran de este equipo.")) return
                       setAuto(false)
@@ -510,7 +605,7 @@ export function NuevaPage() {
                   <div className="mt-4"><FlujoAgente trabajando={trabajando} /></div>
                 </div>
                 <Resumen fotos={fotos} origen={origen} tomaElegida={tomaElegida} borrador={borrador} casoId={casoId} tarea={tarea}
-                  carga={cargaNum} agarre={agarre} postura={postura} onIr={irPaso} />
+                  carga={cargaNum} agarre={agarre} postura={postura} onIr={irPaso} capturaBust={capturaBust} />
               </div>
             )}
           </motion.div>
@@ -578,7 +673,52 @@ function ResumenPropuesta({ propuesta }: { propuesta: { motivos: string[]; adver
   )
 }
 
-function EstadoCamaras({ camaras, permiso, error, detectar }: ReturnType<typeof useCamaras>) {
+/** Empareja cámaras con costado/frente/aérea por el nombre del dispositivo; el resto en orden. */
+function asignarCamarasAVistas(lista: Camara[]): { fuentes: Record<Vista, Fuente>; detalle: string } {
+  const orden: Vista[] = ["costado", "frente", "aerea"]
+  const pistas: Record<Vista, RegExp> = {
+    costado: /\b(costado|lado|side|perfil|lateral)\b/i,
+    frente: /\b(frente|front|frontal)\b/i,
+    aerea: /\b(a[eé]rea|aerial|overhead|cenital|top|arriba|techo)\b/i,
+  }
+  const usadas = new Set<string>()
+  const mapa: Partial<Record<Vista, string>> = {}
+
+  for (const vista of orden) {
+    const hit = lista.find((c) => !usadas.has(c.deviceId) && pistas[vista].test(c.nombre))
+    if (hit) {
+      mapa[vista] = hit.deviceId
+      usadas.add(hit.deviceId)
+    }
+  }
+  for (const vista of orden) {
+    if (mapa[vista]) continue
+    const siguiente = lista.find((c) => !usadas.has(c.deviceId))
+    if (!siguiente) break
+    mapa[vista] = siguiente.deviceId
+    usadas.add(siguiente.deviceId)
+  }
+
+  const fuentes: Record<Vista, Fuente> = {
+    costado: mapa.costado ? { modo: "camara", deviceId: mapa.costado } : { modo: "archivo" },
+    frente: mapa.frente ? { modo: "camara", deviceId: mapa.frente } : { modo: "archivo" },
+    aerea: mapa.aerea ? { modo: "camara", deviceId: mapa.aerea } : { modo: "archivo" },
+  }
+  const etiqueta = (id: string) => lista.find((c) => c.deviceId === id)?.nombre ?? "cámara"
+  const partes = orden
+    .filter((v) => mapa[v])
+    .map((v) => `${v === "aerea" ? "Aérea" : v[0].toUpperCase() + v.slice(1)} → ${etiqueta(mapa[v]!)}`)
+  return {
+    fuentes,
+    detalle: partes.length
+      ? `${partes.join(" · ")}. Puedes cambiarlas a mano si hace falta.`
+      : "No se pudo asignar ninguna cámara.",
+  }
+}
+
+function EstadoCamaras({
+  camaras, permiso, error, detectar, onAsignarAuto, asignando,
+}: ReturnType<typeof useCamaras> & { onAsignarAuto?: () => void | Promise<void>; asignando?: boolean }) {
   if (permiso === "sin-soporte") {
     return <p className="rounded-[12px] border border-rule bg-sheet p-4 text-[14px] text-ink-soft">Este navegador no permite usar cámaras. Abre ErgoAI con su ejecutable o en Edge/Chrome.</p>
   }
@@ -591,18 +731,31 @@ function EstadoCamaras({ camaras, permiso, error, detectar }: ReturnType<typeof 
             {permiso === "concedido" ? (camaras.length ? `${camaras.length} ${camaras.length === 1 ? "cámara conectada" : "cámaras conectadas"}` : "No hay cámaras conectadas") : "Usa las cámaras conectadas a este equipo"}
           </p>
           <p className={cn("truncate text-[13px]", error ? "text-[var(--riesgo-muy-alto)]" : "text-graphite")}>
-            {error ?? (permiso === "concedido" ? camaras.map((c) => c.nombre).join(", ") || "Conecta una y vuelve a detectar." : "Asigna una cámara a cada vista y captura cada cierto tiempo.")}
+            {error ?? (permiso === "concedido" ? camaras.map((c) => c.nombre).join(", ") || "Conecta una y vuelve a detectar." : "Asigna fotos, capturas o cámaras a cada vista.")}
           </p>
         </div>
       </div>
-      <button type="button" className={permiso === "concedido" ? "boton-linea" : "boton-tinta"} onClick={() => void detectar()}>
-        <RefreshCw className="size-4" /> {permiso === "concedido" ? "Volver a detectar" : "Detectar cámaras"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        {onAsignarAuto && (
+          <button
+            type="button"
+            className="boton-tinta"
+            disabled={asignando}
+            onClick={() => void onAsignarAuto()}
+            title="Coloca fotos/capturas en costado·frente·aérea y enlaza cámaras si hay"
+          >
+            <Wand2 className={cn("size-4", asignando && "animate-spin")} /> {asignando ? "Asignando…" : "Asignar vistas"}
+          </button>
+        )}
+        <button type="button" className={permiso === "concedido" ? "boton-linea" : "boton-tinta"} onClick={() => void detectar()}>
+          <RefreshCw className="size-4" /> {permiso === "concedido" ? "Volver a detectar" : "Detectar cámaras"}
+        </button>
+      </div>
     </div>
   )
 }
 
-function Resumen({ fotos, origen, tomaElegida, borrador, casoId, tarea, carga, agarre, postura, onIr }: {
+function Resumen({ fotos, origen, tomaElegida, borrador, casoId, tarea, carga, agarre, postura, onIr, capturaBust }: {
   fotos: Record<Vista, File | null>
   origen: (v: Vista) => "archivo" | "captura" | null
   tomaElegida: Toma | null
@@ -613,6 +766,7 @@ function Resumen({ fotos, origen, tomaElegida, borrador, casoId, tarea, carga, a
   agarre: string
   postura: string
   onIr: (paso: number) => void
+  capturaBust?: number
 }) {
   const [urls, setUrls] = useState<Record<string, string>>({})
   useEffect(() => {
@@ -624,7 +778,7 @@ function Resumen({ fotos, origen, tomaElegida, borrador, casoId, tarea, carga, a
   const srcDe = (vista: Vista) => {
     const fuente = origen(vista)
     if (fuente === "archivo") return urls[vista] ?? null
-    if (fuente === "captura" && tomaElegida) return api.captura(borrador, tomaElegida.id, vista)
+    if (fuente === "captura" && tomaElegida) return api.captura(borrador, tomaElegida.id, vista, capturaBust)
     return null
   }
   const principal = (["costado", "frente", "aerea"] as Vista[]).find((v) => srcDe(v)) ?? "costado"

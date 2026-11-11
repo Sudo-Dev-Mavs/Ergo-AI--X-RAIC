@@ -1,16 +1,17 @@
-import { ArrowLeft, Download, ExternalLink, Printer } from "lucide-react"
+import { ArrowLeft, Download, ExternalLink, Printer, Trash2 } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { DirectionAwareTabs } from "@/components/cult/direction-aware-tabs"
 import { PanelBitacora } from "@/components/ergo/bitacora"
 import { ComparadorResidual } from "@/components/ergo/ComparadorResidual"
+import { useDialogo } from "@/components/ergo/DialogoConfirmar"
 import { Goniometro } from "@/components/ergo/goniometro"
 import { InfoTooltip, TituloConAyuda } from "@/components/ergo/InfoTooltip"
 import { PanelPostura } from "@/components/ergo/postura"
 import { PanelRecomendaciones } from "@/components/ergo/recomendaciones"
 import { VisorFoto } from "@/components/ergo/VisorFoto"
 import { api, type EstadoCaso, type Vista } from "@/lib/api"
-import { avisar, useEspecialista } from "@/lib/app"
+import { avisar, ir, useEspecialista } from "@/lib/app"
 import { accionRiesgo, colorRiesgo, etiquetaTarea, fechaCorta, textoRango } from "@/lib/dominio"
 import { usePreferencias } from "@/lib/preferencias"
 import { useDatos } from "@/lib/useDatos"
@@ -24,20 +25,43 @@ const MENSAJE_ACCION: Record<string, string> = {
 export function CasoPage({ id }: { id: string }) {
   const { datos: estado, setDatos, error } = useDatos(() => api.caso(id), [id])
   const { pedirFirma } = useEspecialista()
-  const { preferencias } = usePreferencias()
+  const { pedir } = useDialogo()
   const [ocupado, setOcupado] = useState(false)
+
+  async function eliminarCaso() {
+    const usuario = pedirFirma()
+    if (!usuario) return
+    const r = await pedir({
+      titulo: `¿Eliminar el caso «${id}»?`,
+      detalle: "Se borran de este equipo las fotos, el análisis REBA, la validación y el informe. No se puede deshacer.",
+      confirmarEtiqueta: "Eliminar caso",
+      tono: "peligro",
+      motivo: {
+        etiqueta: `Escribe ${id} para confirmar`,
+        placeholder: id,
+        obligatorio: true,
+      },
+    })
+    if (!r.ok) return
+    if (r.motivo !== id) {
+      avisar({ titulo: "Confirmación incorrecta", detalle: `Debes escribir exactamente «${id}».`, tipo: "error" })
+      return
+    }
+    setOcupado(true)
+    try {
+      await api.eliminarCaso(id, usuario, r.motivo)
+      avisar({ titulo: "Caso eliminado", detalle: `«${id}» ya no está en este equipo.` })
+      ir({ nombre: "casos" })
+    } catch (e) {
+      avisar({ titulo: "No se eliminó el caso", detalle: e instanceof Error ? e.message : String(e), tipo: "error" })
+    } finally {
+      setOcupado(false)
+    }
+  }
 
   async function accion(nombre: string, recId?: string, valores?: Record<string, string>, comentario?: string) {
     const usuario = pedirFirma()
     if (!usuario) return false
-    if (preferencias.confirmarAcciones) {
-      const pregunta =
-        nombre === "aprobar_informe" ? "¿Aprobar el informe y generar las acciones de piso? Quedará firmado en la bitácora."
-        : nombre === "aprobar" ? "¿Aprobar esta recomendación?"
-        : nombre === "rechazar" ? "¿Rechazar esta recomendación?"
-        : null
-      if (pregunta && !window.confirm(pregunta)) return false
-    }
     setOcupado(true)
     try {
       setDatos(await api.validar(id, { usuario, accion: nombre, rec_id: recId, valores, comentario }))
@@ -106,9 +130,20 @@ export function CasoPage({ id }: { id: string }) {
             {ctx.realizado_por && <Dato termino="Por" valor={ctx.realizado_por} />}
           </dl>
         </div>
-        <span className={cn("rounded-lg px-3 py-1.5 text-[14px] font-medium", validacion.estado_informe === "aprobado" ? "trazo-tinta" : "trazo-lapiz text-ink-soft")}>
-          {validacion.estado_informe === "aprobado" ? `Informe aprobado por ${validacion.aprobado_por}` : "Informe en borrador"}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn("rounded-lg px-3 py-1.5 text-[14px] font-medium", validacion.estado_informe === "aprobado" ? "trazo-tinta" : "trazo-lapiz text-ink-soft")}>
+            {validacion.estado_informe === "aprobado" ? `Informe aprobado por ${validacion.aprobado_por}` : "Informe en borrador"}
+          </span>
+          <button
+            type="button"
+            className="boton-linea border-red-300 text-red-800 hover:border-red-400 hover:bg-red-50"
+            disabled={ocupado}
+            onClick={() => void eliminarCaso()}
+            title="Borrar fotos, análisis e informe de este caso"
+          >
+            <Trash2 className="size-4" /> Eliminar caso
+          </button>
+        </div>
       </header>
 
       <p className="mt-5 rounded-lg border border-rule-soft bg-slate-50 px-3.5 py-2.5 text-[13px] leading-snug text-ink-soft">

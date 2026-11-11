@@ -180,15 +180,19 @@ def _buscar(validacion: dict[str, Any], rec_id: str) -> dict[str, Any]:
 
 
 def decidir(validacion: dict[str, Any], rec_id: str, usuario: str, accion: str, comentario: str = "") -> None:
-    """Aprueba, rechaza o devuelve a propuesta una recomendación."""
+    """Aprueba, rechaza, elimina (obsoleta) o devuelve a propuesta una recomendación."""
 
-    estados = {"aprobar": "aprobada", "rechazar": "rechazada", "reabrir": "propuesta"}
+    estados = {"aprobar": "aprobada", "rechazar": "rechazada", "reabrir": "propuesta", "eliminar": "obsoleta"}
     if accion not in estados:
         raise ValueError(f"Acción inválida: {accion}")
     if accion == "rechazar" and not comentario.strip():
         raise ValueError("Para rechazar se requiere un motivo.")
+    if accion == "eliminar" and not comentario.strip():
+        raise ValueError("Para eliminar se requiere un motivo (queda en la bitácora).")
     rec = _buscar(validacion, rec_id)
     antes, despues = rec.get("estado"), estados[accion]
+    if antes == "obsoleta" and accion == "eliminar":
+        raise ValueError(f"{rec_id} ya está eliminada.")
     rec["estado"] = despues
     if comentario:
         rec["comentario"] = comentario

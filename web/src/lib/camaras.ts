@@ -137,7 +137,7 @@ export function useCamaras() {
     }
   }, [])
 
-  return { camaras, permiso, error, detectar, abrir, cerrar, capturar }
+  return { camaras, permiso, error, detectar, listar, abrir, cerrar, capturar }
 }
 
 function esperarCuadro(video: HTMLVideoElement, limiteMs = 4000): Promise<void> {
