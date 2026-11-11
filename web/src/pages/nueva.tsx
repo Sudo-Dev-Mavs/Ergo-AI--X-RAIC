@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Camera, RefreshCw } from "lucide-react"
+import { ArrowLeft, ArrowRight, Camera, RefreshCw, Sparkles } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
@@ -112,6 +112,8 @@ export function NuevaPage() {
   const [lados, setLados] = useState<Record<string, Record<Lado, boolean>>>({})
 
   const [trabajando, setTrabajando] = useState(false)
+  const [proponiendo, setProponiendo] = useState(false)
+  const [propuesta, setPropuesta] = useState<{ motivos: string[]; advertencias: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => guardar("local", CLAVE_FUENTES, fuentes), [fuentes])
@@ -203,6 +205,64 @@ export function NuevaPage() {
   ]
   const primerPendiente = !pasos[0].listo ? 0 : !pasos[1].listo ? 1 : null
   const puedeAnalizar = primerPendiente === null && !trabajando
+
+  async function proponerDesdeFotos() {
+    if (!vistasListas.length) {
+      avisar({ titulo: "Faltan fotos", detalle: "Sube o captura al menos una vista antes de proponer.", tipo: "error" })
+      irPaso(0)
+      return
+    }
+    setError(null)
+    setProponiendo(true)
+    const formulario = new FormData()
+    formulario.set("carga_kg", String(Number.isFinite(cargaNum) ? cargaNum : 0))
+    for (const { vista } of VISTAS) if (origen(vista) === "archivo" && fotos[vista]) formulario.set(vista, fotos[vista]!)
+    if (vistasCaptura.length && tomaElegida) {
+      formulario.set("borrador", borrador)
+      formulario.set("toma", tomaElegida.id)
+      formulario.set("vistas_toma", vistasCaptura.join(","))
+    }
+    try {
+      const resp = await api.proponerContexto(formulario)
+      setPropuesta({ motivos: resp.motivos ?? [], advertencias: resp.advertencias ?? [] })
+      if (!resp.ok) {
+        avisar({ titulo: "No se pudo proponer", detalle: resp.motivos?.[0] ?? "Revisa las fotos.", tipo: "error" })
+        return
+      }
+      const s = resp.sugerencias ?? {}
+      if (s.postura === "de_pie" || s.postura === "sentado" || s.postura === "alternada") setPostura(s.postura)
+      if (s.tipo_trabajo === "precision" || s.tipo_trabajo === "ligero" || s.tipo_trabajo === "pesado") setTrabajo(s.tipo_trabajo)
+      setAjustes({
+        estatica: Boolean(s.actividad?.estatica_mas_1min),
+        repetitiva: Boolean(s.actividad?.repetitiva_mas_4_por_min),
+        inestable: Boolean(s.actividad?.cambios_bruscos_o_base_inestable),
+        fuerza_brusca: Boolean(s.fuerza_brusca),
+      })
+      setLados({
+        hombro_elevado: {
+          izquierdo: Boolean(s.hombro_elevado?.izquierdo),
+          derecho: Boolean(s.hombro_elevado?.derecho),
+        },
+        brazo_apoyado: {
+          izquierdo: Boolean(s.brazo_apoyado?.izquierdo),
+          derecho: Boolean(s.brazo_apoyado?.derecho),
+        },
+        muneca_desviada_o_torcida: {
+          izquierdo: Boolean(s.muneca_desviada_o_torcida?.izquierdo),
+          derecho: Boolean(s.muneca_desviada_o_torcida?.derecho),
+        },
+      })
+      avisar({
+        titulo: "Propuesta lista",
+        detalle: "Se rellenaron postura y ajustes según la pose. Revísalos: tú decides qué queda.",
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      avisar({ titulo: "No se propuso el contexto", detalle: e instanceof Error ? e.message : String(e), tipo: "error" })
+    } finally {
+      setProponiendo(false)
+    }
+  }
 
   async function analizar(reemplazar = false) {
     if (primerPendiente !== null) {
@@ -375,6 +435,12 @@ export function NuevaPage() {
 
             {paso === 1 && (
               <div className="grid max-w-[720px] gap-5">
+                <BotonProponer
+                  disabled={!vistasListas.length || proponiendo || trabajando}
+                  ocupado={proponiendo}
+                  onClick={() => void proponerDesdeFotos()}
+                />
+                {propuesta && <ResumenPropuesta propuesta={propuesta} />}
                 <Campo etiqueta="Identificador del caso">
                   <input className="campo t-num text-[17px]" value={casoId} onChange={(e) => setCasoId(e.target.value.trim())} aria-invalid={!idValido} />
                   <p className="mt-1 text-[12px] text-graphite">Autogenerado · editable</p>
@@ -411,6 +477,12 @@ export function NuevaPage() {
             {paso === 2 && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="max-w-[480px]">
+                  <BotonProponer
+                    disabled={!vistasListas.length || proponiendo || trabajando}
+                    ocupado={proponiendo}
+                    onClick={() => void proponerDesdeFotos()}
+                  />
+                  {propuesta && <div className="mb-3"><ResumenPropuesta propuesta={propuesta} /></div>}
                   <p className="mb-2 text-[14px] text-graphite">Ajustes REBA que se observan en piso. Si no aplican, déjalos apagados.</p>
                   <ul className="divide-y divide-rule-soft">
                     {AJUSTES.map(({ clave, texto }) => (
@@ -472,6 +544,36 @@ export function NuevaPage() {
           </div>
         </div>
       </form>
+    </div>
+  )
+}
+
+function BotonProponer({ disabled, ocupado, onClick }: { disabled?: boolean; ocupado?: boolean; onClick: () => void }) {
+  return (
+    <div className="rounded-[12px] border border-jabil/20 bg-jabil/[0.04] p-3">
+      <button type="button" className="boton-tinta" disabled={disabled} onClick={onClick}>
+        <Sparkles className="size-4" />
+        {ocupado ? "Analizando fotos…" : "Proponer desde las fotos"}
+      </button>
+      <p className="mt-2 text-[12px] leading-snug text-graphite">
+        Detecta la pose en este equipo (MediaPipe) y sugiere postura y ajustes REBA. No inventa kg, agarre ni estática/repetición:
+        eso se confirma en piso. Tú puedes corregir todo antes de analizar.
+      </p>
+    </div>
+  )
+}
+
+function ResumenPropuesta({ propuesta }: { propuesta: { motivos: string[]; advertencias: string[] } }) {
+  return (
+    <div className="rounded-[12px] border border-rule bg-sheet p-3 text-[12px] leading-snug text-ink-soft">
+      {propuesta.advertencias.slice(0, 2).map((t) => (
+        <p key={t} className="text-graphite">{t}</p>
+      ))}
+      {propuesta.motivos.length > 0 && (
+        <ul className="mt-2 list-disc space-y-0.5 pl-4">
+          {propuesta.motivos.slice(0, 8).map((m) => <li key={m}>{m}</li>)}
+        </ul>
+      )}
     </div>
   )
 }

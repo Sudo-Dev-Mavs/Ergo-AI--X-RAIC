@@ -268,6 +268,27 @@ export const api = {
   casos: () => pedir<ResumenCaso[]>("/api/casos"),
   caso: (id: string) => pedirCaso(`/api/casos/${encodeURIComponent(id)}`),
   crear: (formulario: FormData) => pedirCaso("/api/casos", { method: "POST", body: formulario }),
+  /** Sugiere postura/ajustes REBA desde las fotos (sin crear el caso). */
+  proponerContexto: (formulario: FormData) =>
+    pedir<{
+      ok: boolean
+      motivos: string[]
+      advertencias: string[]
+      vistas_detectadas?: string[]
+      sugerencias: {
+        postura?: string | null
+        tipo_trabajo?: string | null
+        fuerza_brusca?: boolean
+        actividad?: {
+          estatica_mas_1min?: boolean
+          repetitiva_mas_4_por_min?: boolean
+          cambios_bruscos_o_base_inestable?: boolean
+        }
+        hombro_elevado?: { izquierdo?: boolean; derecho?: boolean }
+        brazo_apoyado?: { izquierdo?: boolean; derecho?: boolean }
+        muneca_desviada_o_torcida?: { izquierdo?: boolean; derecho?: boolean }
+      }
+    }>("/api/proponer-contexto", { method: "POST", body: formulario }),
   validar: (id: string, cuerpo: { usuario: string; accion: string; rec_id?: string; valores?: Record<string, string>; comentario?: string }) =>
     pedirCaso(`/api/casos/${encodeURIComponent(id)}/validacion`, json(cuerpo)),
   ajustarResidual: (id: string, usuario: string, puntaje: number, comentario: string) =>
